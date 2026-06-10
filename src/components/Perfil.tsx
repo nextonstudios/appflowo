@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { signIn, signOut } from "@choochmeque/tauri-plugin-google-auth-api";
 import { UpdateState } from "../hooks/useUpdater";
+import { getVersion } from "@tauri-apps/api/app";
 
 interface Servicio {
   id: number;
@@ -156,6 +157,11 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
   function emailIntegracion(proveedor: string) {
     return integraciones.find((i) => i.proveedor === proveedor)?.cuenta_email || "";
   }
+const [version, setVersion] = useState("");
+
+useEffect(() => {
+  getVersion().then(setVersion);
+}, []);
 
   async function conectarGoogleDrive() {
     setConectandoDrive(true);
@@ -321,7 +327,7 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
   }
 
   if (cargando) {
-    return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando perfil...</p></div>;
+    <p className="text-[#6B7280] text-sm mt-0.5">Flowo v{version || "..."} — creado por NextOn Studios</p>
   }
 
   return (
