@@ -15,11 +15,12 @@
         "title": "flowo",
         "width": 800,
         "height": 600,
-        "backgroundColor": "#1A1F2E"
+        "backgroundColor": "#1A1F2E",
+        "devtools": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://localhost:* http://localhost:* https://github.com https://objects.githubusercontent.com https://releases.githubusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:"
+      "csp": "default-src 'self' ipc: http://ipc.localhost; connect-src 'self' ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://localhost:* http://localhost:* https://github.com https://objects.githubusercontent.com https://releases.githubusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:"
     }
   },
   "bundle": {
