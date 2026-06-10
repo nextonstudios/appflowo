@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
 interface Props {
   onLogin: () => void;
+  mensajeExterno?: string | null;
 }
 
-function Login({ onLogin }: Props) {
+function Login({ onLogin, mensajeExterno }: Props) {
   const [esRegistro, setEsRegistro] = useState(false);
   const [esRecuperar, setEsRecuperar] = useState(false);
   const [email, setEmail] = useState("");
@@ -14,6 +15,10 @@ function Login({ onLogin }: Props) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+
+  useEffect(() => {
+    if (mensajeExterno) setMensaje(mensajeExterno);
+  }, [mensajeExterno]);
 
   async function handleSubmit() {
     if (!email || !password) return;
@@ -50,7 +55,9 @@ function Login({ onLogin }: Props) {
     if (!email) { setError("Ingresa tu correo primero."); return; }
     setCargando(true);
     setError("");
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "flowo://auth/callback",
+    });
     if (error) {
       setError("No se pudo enviar el correo. Verifica que el email sea correcto.");
     } else {
@@ -175,7 +182,7 @@ function Login({ onLogin }: Props) {
               <input type="checkbox" id="terminos" className="mt-1" />
               <label htmlFor="terminos" className="text-[#6B7280] text-xs">
                 Acepto los{" "}
-                <a href="/terminos" target="_blank" rel="noopener noreferrer"
+                <a href="https://appflowo.com/terminos-y-condiciones-de-uso/" target="_blank" rel="noopener noreferrer"
                   className="text-[#1DB8A0] hover:underline">
                   términos y condiciones
                 </a>
@@ -184,6 +191,7 @@ function Login({ onLogin }: Props) {
           )}
 
           {error && <p className="text-xs mb-4 text-center text-[#F47C5C]">{error}</p>}
+          {mensaje && <p className="text-xs mb-4 text-center text-[#1DB8A0]">{mensaje}</p>}
 
           <button
             onClick={handleSubmit}

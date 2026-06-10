@@ -12,6 +12,7 @@ import Facturas from "./components/Facturas";
 import Perfil from "./components/Perfil";
 import { useNotificaciones } from "./hooks/useNotificaciones";
 import { useUpdater } from "./hooks/useUpdater";
+import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
 function App() {
   const [logueado, setLogueado] = useState(false);
@@ -19,6 +20,7 @@ function App() {
   const [cargando, setCargando] = useState(true);
   const [activePage, setActivePage] = useState("dashboard");
   const [proyectoFacturaId, setProyectoFacturaId] = useState<string | null>(null);
+  const [mensajeAuth, setMensajeAuth] = useState<string | null>(null);
 
   useNotificaciones(userId);
   const { estado: estadoUpdate, verificar: verificarUpdate, reiniciar } = useUpdater();
@@ -35,7 +37,42 @@ function App() {
       setUserId(session?.user?.id ?? null);
     });
 
-    return () => listener.subscription.unsubscribe();
+    // Capturar el deep link cuando Supabase redirige de vuelta a la app
+    const unlistenPromise = onOpenUrl((urls) => {
+      const url = urls[0];
+      if (!url) return;
+
+      // Extraer los parámetros del fragment (#access_token=...&type=signup)
+      const hash = url.includes("#") ? url.split("#")[1] : url.split("?")[1];
+      if (!hash) return;
+
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      const type = params.get("type");
+
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        }).then(({ error }) => {
+          if (error) {
+            setMensajeAuth("Error al confirmar la cuenta. Intenta de nuevo.");
+          } else {
+            if (type === "signup") {
+              setMensajeAuth("¡Cuenta confirmada! Ya puedes iniciar sesión.");
+            } else if (type === "recovery") {
+              setMensajeAuth("Puedes restablecer tu contraseña ahora.");
+            }
+          }
+        });
+      }
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+      unlistenPromise.then((unlisten) => unlisten());
+    };
   }, []);
 
   if (cargando) {
@@ -47,7 +84,7 @@ function App() {
   }
 
   if (!logueado) {
-    return <Login onLogin={() => setLogueado(true)} />;
+    return <Login onLogin={() => setLogueado(true)} mensajeExterno={mensajeAuth} />;
   }
 
   return (

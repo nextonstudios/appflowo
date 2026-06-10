@@ -45,6 +45,9 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
   const [guardado, setGuardado] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [logo, setLogo] = useState<string | null>(null);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const [errorLogo, setErrorLogo] = useState<string | null>(null);
   const [integraciones, setIntegraciones] = useState<Integracion[]>([]);
   const [conectandoDrive, setConectandoDrive] = useState(false);
   const [errorDrive, setErrorDrive] = useState<string | null>(null);
@@ -80,11 +83,58 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
     }
 
     setCargando(false);
+
     const { data: avatarData } = await supabase.storage
       .from("avatars")
       .getPublicUrl(user.id + "/avatar");
-
     if (avatarData?.publicUrl) setAvatar(avatarData.publicUrl + "?t=" + Date.now());
+
+    const { data: logoData } = await supabase.storage
+      .from("avatars")
+      .getPublicUrl(user.id + "/logo");
+    if (logoData?.publicUrl) setLogo(logoData.publicUrl + "?t=" + Date.now());
+  }
+
+  async function subirLogo(file: File) {
+    setErrorLogo(null);
+
+    // Validar formato
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setErrorLogo("Solo se aceptan archivos PNG o JPG.");
+      return;
+    }
+
+    // Validar peso (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorLogo("El logo no puede superar 5MB.");
+      return;
+    }
+
+    setSubiendoLogo(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase.storage
+      .from("avatars")
+      .upload(user.id + "/logo", file, { upsert: true, contentType: file.type });
+
+    if (error) {
+      setErrorLogo("Error al subir el logo. Intenta de nuevo.");
+    } else {
+      const { data } = await supabase.storage
+        .from("avatars")
+        .getPublicUrl(user.id + "/logo");
+      setLogo(data.publicUrl + "?t=" + Date.now());
+    }
+
+    setSubiendoLogo(false);
+  }
+
+  async function eliminarLogo() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.storage.from("avatars").remove([user.id + "/logo"]);
+    setLogo(null);
   }
 
   async function cargarIntegraciones() {
@@ -251,7 +301,6 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
     setServicios(servicios.filter((s) => s.id !== id));
   }
 
-  // Lógica del botón de actualización
   function labelBotonUpdate() {
     if (estadoUpdate.listo) return `Reiniciar para aplicar v${estadoUpdate.version}`;
     if (estadoUpdate.descargando) return `Descargando... ${estadoUpdate.progreso}%`;
@@ -350,7 +399,7 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
             <span className="text-[#6B7280] text-xs">Opcional — aparece en facturas y portal</span>
           </div>
           <p className="text-[#6B7280] text-xs mb-4">Si ofreces tus servicios bajo una marca configurala aqui</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="text-[#6B7280] text-xs mb-1 block">Nombre de marca</label>
               <input value={marcaNombre} onChange={(e) => setMarcaNombre(e.target.value)}
@@ -370,6 +419,53 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
                 className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
             </div>
           </div>
+
+          {/* Logo de marca */}
+          <div>
+            <label className="text-[#6B7280] text-xs mb-2 block">
+              Logotipo — aparece en tus facturas PDF
+            </label>
+            <div className="flex items-center gap-3">
+              {logo ? (
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="bg-[#1A1F2E] border border-[#252B3B] rounded-lg p-2 flex items-center justify-center" style={{ minWidth: "80px", height: "48px" }}>
+                    <img
+                      src={logo}
+                      alt="Logo de marca"
+                      className="max-h-8 max-w-full object-contain"
+                      onError={() => setLogo(null)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[#1DB8A0] text-xs cursor-pointer hover:underline">
+                      Cambiar logo
+                      <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) subirLogo(file);
+                      }} />
+                    </label>
+                    <button onClick={eliminarLogo} className="text-[#F47C5C] text-xs hover:underline text-left">
+                      Eliminar logo
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className={"flex items-center gap-2 cursor-pointer border border-dashed rounded-lg px-4 py-3 flex-1 transition-colors " +
+                  (subiendoLogo ? "border-[#1DB8A0]/50 bg-[#1DB8A0]/5 cursor-not-allowed" : "border-[#252B3B] hover:border-[#1DB8A0]/50 hover:bg-[#1DB8A0]/5")}>
+                  <input type="file" accept="image/png,image/jpeg" className="hidden" disabled={subiendoLogo} onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) subirLogo(file);
+                  }} />
+                  <span className="text-[#1DB8A0] text-sm">{subiendoLogo ? "Subiendo..." : "+"}</span>
+                  <div>
+                    <p className="text-[#6B7280] text-xs">{subiendoLogo ? "Subiendo logo..." : "Subir logotipo"}</p>
+                    <p className="text-[#6B7280] text-xs opacity-60">PNG o JPG · Máx. 5MB</p>
+                  </div>
+                </label>
+              )}
+            </div>
+            {errorLogo && <p className="text-[#F47C5C] text-xs mt-2">{errorLogo}</p>}
+          </div>
         </div>
 
         {/* Preferencias */}
@@ -388,11 +484,17 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
             </div>
             <div>
               <label className="text-[#6B7280] text-xs mb-1 block">Idioma</label>
-              <select value={idioma} onChange={(e) => setIdioma(e.target.value)}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
-                <option value="es">Español</option>
-                <option value="en">English</option>
-              </select>
+              <div className="relative">
+                <select
+                  value="es"
+                  disabled
+                  className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none opacity-70 cursor-not-allowed appearance-none">
+                  <option value="es">Español</option>
+                </select>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7C5CBF] text-xs font-medium pointer-events-none">
+                  + idiomas pronto
+                </span>
+              </div>
             </div>
           </div>
           <div>
@@ -578,15 +680,10 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
             <h3 className="text-white font-medium">Version</h3>
             <p className="text-[#6B7280] text-sm mt-0.5">Flowo v0.8 — creado por NextOn Studios</p>
           </div>
-          <button
-            onClick={() => openUrl("https://www.paypal.com/ncp/payment/CAYESPSBEHB42")}
-            className="text-[#6B7280] text-xs hover:text-white transition-colors">
-            ☕ Donanos un cafe
-          </button>
         </div>
 
         {/* Panel de actualización */}
-        <div className="bg-[#1A1F2E] rounded-lg p-4 flex items-center justify-between">
+        <div className="bg-[#1A1F2E] rounded-lg p-4 flex items-center justify-between mb-4">
           <div>
             {estadoUpdate.listo && (
               <p className="text-[#1DB8A0] text-sm font-medium">
@@ -616,6 +713,19 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
             disabled={estadoUpdate.descargando || (estadoUpdate.disponible && !estadoUpdate.listo)}
             className={`text-xs font-medium px-4 py-2 rounded-lg transition-all ${colorBotonUpdate()}`}>
             {labelBotonUpdate()}
+          </button>
+        </div>
+
+        {/* Donación */}
+        <div className="bg-[#1A1F2E] rounded-lg p-4 flex items-center justify-between">
+          <div>
+            <p className="text-white text-sm font-medium">¿Te gusta Flowo?</p>
+            <p className="text-[#6B7280] text-xs mt-0.5">Si Flowo te está ahorrando tiempo, considera apoyarnos</p>
+          </div>
+          <button
+            onClick={() => openUrl("https://www.paypal.com/ncp/payment/CAYESPSBEHB42")}
+            className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity flex-shrink-0">
+            Donanos un cafe ☕
           </button>
         </div>
       </div>

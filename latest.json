@@ -1,0 +1,11 @@
+{
+  "version": "0.8.0",
+  "notes": "Flowo v0.8.0 - Sistema de actualizaciones, portal cliente y notificaciones en tiempo real",
+  "pub_date": "2026-06-08T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/nextonstudios/appflowo/releases/download/v0.8.0/flowo_0.8.0_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbTI1Rko2Vi9CTlErMzlLSi9vWTZmSjF6dkVUL2lNSnY1QWtJbURJVzNtVVhHRHgxczl6SzhMOWQrZG53N2lZblI2K0c0cjhvNHlkcnp1Rk1Ed1FmY3VXSkV0UzEwOHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwOTY1ODA5CWZpbGU6Zmxvd29fMC44LjBfeDY0LXNldHVwLmV4ZQpod2lSTUdYN0RuRStta0dWVXJ3YXpES2FLSEdZS0VWaTZGNk4vN3NtMXhZdFloQ3VQdU12K2FhNVBEY1FNb3lPUVZsSEtWZUVaanFjaTRFT1Y5bDBCdz09Cg=="
+    }
+  }
+}
