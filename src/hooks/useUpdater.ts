@@ -43,9 +43,8 @@ export function useUpdater() {
       } else {
         setEstado(prev => ({ ...prev, disponible: false, version: null }));
       }
-    } catch (e) {
-      // En desarrollo no hay servidor de updates, ignoramos silenciosamente
-      console.log('Updater no disponible en desarrollo');
+} catch (e) {
+      console.error('Error updater:', e);
     }
   };
 
