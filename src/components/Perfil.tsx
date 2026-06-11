@@ -327,7 +327,9 @@ useEffect(() => {
   }
 
   if (cargando) {
-    <p className="text-[#6B7280] text-sm mt-0.5">Flowo v{version || "..."} — creado por NextOn Studios</p>
+    if (cargando) {
+    return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando perfil...</p></div>;
+  }
   }
 
   return (
