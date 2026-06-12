@@ -364,7 +364,7 @@ try {
     // Detectar formato
     const esJpeg = logoBase64User.startsWith("data:image/jpeg");
     const formato = esJpeg ? "JPEG" : "PNG";
-    doc.addImage(logoBase64User, formato, 10, 10, 55, 30);
+    doc.addImage(logoBase64User, "PNG", 12, footerY + 6, 40, 12);
   }
 } catch (_) {
   // Si no tiene logo subido, el espacio queda vacío
@@ -542,31 +542,52 @@ try {
   }
 
   // Footer legal
-  doc.setFillColor(...ink);
-  doc.rect(0, 272, 210, 25, "F");
+// =========================
+// FOOTER
+// =========================
 
-  doc.setTextColor(...teal);
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.text("Flowo", 14, 281);
+const footerHeight = 32;
+const footerY = 297 - footerHeight;
 
-doc.setTextColor(180, 180, 180);
+// Fondo
+doc.setFillColor(...ink);
+doc.rect(0, footerY, 210, footerHeight, "F");
+
+// Logo / Marca
+doc.setTextColor(...teal);
+doc.setFont("helvetica", "bold");
+doc.setFontSize(18);
+doc.text("Flowo", 14, footerY + 12);
+
+// Subtítulo pequeño
+doc.setFontSize(5);
 doc.setFont("helvetica", "normal");
-doc.setFontSize(7);
+doc.text("Plataforma para Freelancers", 14, footerY + 17);
 
+// Texto legal
 const legalText =
   "Este documento ha sido generado electrónicamente como constancia de una transacción entre las partes. Su finalidad es servir como comprobante de pago, registro de servicios prestados y respaldo comercial. La aceptación y uso de este documento estarán sujetos a la legislación aplicable en la jurisdicción correspondiente.";
 
-const wrappedText = doc.splitTextToSize(legalText, 180);
+doc.setTextColor(220, 220, 220);
+doc.setFontSize(5.5);
 
-const startY = 287;
+const legalLines = doc.splitTextToSize(legalText, 120);
 
-doc.text(wrappedText, 14, startY);
+doc.text(
+  legalLines,
+  70,
+  footerY + 10
+);
 
-// Cada línea ocupa aproximadamente 3 mm con fontSize 7
-const footerY = startY + wrappedText.length * 3 + 2;
+// Línea inferior
+doc.setFontSize(5);
+doc.setTextColor(180, 180, 180);
 
-doc.text("Generado con Flowo · appflowo.com", 14, footerY);
+doc.text(
+  "Generado con Flowo · appflowo.com",
+  70,
+  footerY + 23
+);
 
   // Guardar
   const pdfBytes = doc.output("arraybuffer");
