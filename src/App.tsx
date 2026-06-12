@@ -10,9 +10,12 @@ import Tareas from "./components/Tareas";
 import Timer from "./components/Timer";
 import Facturas from "./components/Facturas";
 import Perfil from "./components/Perfil";
+import Tutorial from "./components/Tutorial";
 import { useNotificaciones } from "./hooks/useNotificaciones";
 import { useUpdater } from "./hooks/useUpdater";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
+
+const TUTORIAL_VERSION = 1;
 
 function App() {
   const [logueado, setLogueado] = useState(false);
@@ -21,6 +24,7 @@ function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [proyectoFacturaId, setProyectoFacturaId] = useState<string | null>(null);
   const [mensajeAuth, setMensajeAuth] = useState<string | null>(null);
+  const [mostrarTutorial, setMostrarTutorial] = useState(false);
 
   useNotificaciones(userId);
   const { estado: estadoUpdate, verificar: verificarUpdate, reiniciar, descargar } = useUpdater();
@@ -30,6 +34,11 @@ function App() {
       setLogueado(!!data.session);
       setUserId(data.session?.user?.id ?? null);
       setCargando(false);
+      document.addEventListener("contextmenu", (e) => {
+  const target = e.target as HTMLElement;
+  const esTexto = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+  if (!esTexto) e.preventDefault();
+});
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -73,6 +82,23 @@ function App() {
     };
   }, []);
 
+  // Verificar si el usuario necesita ver el tutorial
+  useEffect(() => {
+    if (!logueado || !userId) return;
+    async function verificarTutorial() {
+      const { data } = await supabase
+        .from("perfiles")
+        .select("tutorial_version")
+        .eq("user_id", userId)
+        .single();
+      const version = data?.tutorial_version ?? 0;
+      if (version < TUTORIAL_VERSION) {
+        setMostrarTutorial(true);
+      }
+    }
+    verificarTutorial();
+  }, [logueado, userId]);
+
   if (cargando) {
     return (
       <div className="min-h-screen bg-[#1A1F2E] flex items-center justify-center">
@@ -111,6 +137,10 @@ function App() {
           )}
         </div>
       </main>
+
+      {mostrarTutorial && (
+        <Tutorial onTerminar={() => setMostrarTutorial(false)} />
+      )}
     </div>
   );
 }

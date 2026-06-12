@@ -504,19 +504,21 @@ if (cargando) {
           <div>
             <label className="text-[#6B7280] text-xs mb-1 block">Tema</label>
             <div className="flex gap-2">
-              <button onClick={() => setTema("oscuro")}
-                className={"flex-1 text-xs py-2.5 rounded-lg font-medium border transition-colors " + (tema === "oscuro" ? "bg-[#1A1F2E] border-[#1DB8A0] text-white" : "bg-[#1A1F2E] border-[#252B3B] text-[#6B7280] hover:text-white")}>
-                Oscuro
-              </button>
-              <button onClick={() => setTema("claro")}
-                className={"flex-1 text-xs py-2.5 rounded-lg font-medium border transition-colors " + (tema === "claro" ? "bg-[#1A1F2E] border-[#1DB8A0] text-white" : "bg-[#1A1F2E] border-[#252B3B] text-[#6B7280] hover:text-white")}>
-                Claro
-              </button>
-            </div>
-          </div>
+               <button onClick={() => setTema("oscuro")}
+    className={"flex-1 text-xs py-2.5 rounded-lg font-medium border transition-colors " + (tema === "oscuro" ? "bg-[#1A1F2E] border-[#1DB8A0] text-white" : "bg-[#1A1F2E] border-[#252B3B] text-[#6B7280] hover:text-white")}>
+    Oscuro
+  </button>
+  <div className="flex-1 relative">
+              <button disabled
+  className="w-full text-xs py-2.5 rounded-lg font-medium border bg-[#1A1F2E] border-[#252B3B] text-[#6B7280] opacity-70 cursor-not-allowed flex items-center justify-center gap-2">
+  Claro
+  <span className="text-[#7C5CBF] text-xs font-medium">Proximamente</span>
+</button>
+                  </div>
+</div>
         </div>
       </div>
-
+</div>
       {/* Almacenamiento */}
       <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6 mb-4">
         <div className="mb-4">

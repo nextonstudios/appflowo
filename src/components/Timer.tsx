@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { supabase } from "../lib/supabase";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 
 interface Tarea {
   nombre: string;
@@ -35,6 +36,45 @@ const tiemposPreset = [
   { label: "90 / 20", trabajo: 90, descanso: 20, descansoLargo: 45 },
 ];
 
+const frasesPomodoro = {
+  esperando: [
+    "Listo cuando tú lo seas.",
+    "El flow no se fuerza, se activa.",
+    "Un ciclo a la vez.",
+    "Tu próxima factura empieza aquí.",
+  ],
+  trabajo: [
+    "El cliente no sabe lo que se viene.",
+    "Modo beast activado.",
+    "Cada minuto cuenta. Tú también.",
+    "Los mejores freelancers no esperan inspiración.",
+    "Factura en construcción.",
+    "Sin distracciones. Solo tú y el trabajo.",
+    "Este ciclo te acerca al cierre.",
+  ],
+  descanso: [
+    "Mereces este break.",
+    "El cerebro también necesita aire.",
+    "Pausa táctica. Vuelves mejor.",
+    "Respira. Ya ganaste este descanso.",
+    "Levanta la vista. Tómate el break.",
+  ],
+  "descanso-largo": [
+    "Eso fue épico. Recarga bien.",
+    "4 ciclos completados. Eres una máquina.",
+    "Levántate, camina, respira.",
+    "Monstruo. Ahora descansa de verdad.",
+    "El trabajo puede esperar 15 minutos. Tú no.",
+  ],
+};
+
+function getFrase(fase: string, corriendo: boolean, ciclos: number): string {
+  const pool = (!corriendo && ciclos === 0)
+    ? frasesPomodoro.esperando
+    : frasesPomodoro[fase as keyof typeof frasesPomodoro] || frasesPomodoro.trabajo;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function formatTiempo(segundos: number) {
   const h = Math.floor(segundos / 3600);
   const m = Math.floor((segundos % 3600) / 60);
@@ -47,96 +87,6 @@ function formatTiempoCorto(segundos: number) {
   const m = Math.floor((segundos % 3600) / 60);
   if (h > 0) return h + "h " + String(m).padStart(2, "0") + "m";
   return m + "m";
-}
-
-function GatoEsperando() {
-  return (
-    <svg viewBox="0 0 120 120" width="100" height="100">
-      <ellipse cx="60" cy="68" rx="28" ry="25" fill="#6B7280"/>
-      <polygon points="38,48 44,32 50,48" fill="#6B7280"/>
-      <polygon points="70,48 76,32 82,48" fill="#6B7280"/>
-      <polygon points="40,48 44,36 48,48" fill="#F4C5D0"/>
-      <polygon points="72,48 76,36 80,48" fill="#F4C5D0"/>
-      <ellipse cx="52" cy="63" rx="5" ry="5" fill="#1A1F2E"/>
-      <ellipse cx="68" cy="63" rx="5" ry="5" fill="#1A1F2E"/>
-      <ellipse cx="53" cy="62" rx="2" ry="2" fill="white"/>
-      <ellipse cx="69" cy="62" rx="2" ry="2" fill="white"/>
-      <ellipse cx="60" cy="71" rx="4" ry="3" fill="#F4A0B0"/>
-      <path d="M55 76 Q60 74 65 76" stroke="#1A1F2E" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-      <line x1="45" y1="70" x2="30" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="45" y1="72" x2="30" y2="72" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="70" x2="90" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="72" x2="90" y2="72" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function GatoTrabajando() {
-  return (
-    <svg viewBox="0 0 120 120" width="100" height="100">
-      <ellipse cx="60" cy="68" rx="28" ry="25" fill="#7C5CBF"/>
-      <polygon points="38,48 44,32 50,48" fill="#7C5CBF"/>
-      <polygon points="70,48 76,32 82,48" fill="#7C5CBF"/>
-      <polygon points="40,48 44,36 48,48" fill="#F4C5D0"/>
-      <polygon points="72,48 76,36 80,48" fill="#F4C5D0"/>
-      <ellipse cx="52" cy="62" rx="5" ry="6" fill="#1A1F2E"/>
-      <ellipse cx="68" cy="62" rx="5" ry="6" fill="#1A1F2E"/>
-      <ellipse cx="53" cy="61" rx="2" ry="2" fill="white"/>
-      <ellipse cx="69" cy="61" rx="2" ry="2" fill="white"/>
-      <ellipse cx="60" cy="70" rx="4" ry="3" fill="#F4A0B0"/>
-      <line x1="45" y1="70" x2="30" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="45" y1="72" x2="30" y2="72" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="70" x2="90" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="72" x2="90" y2="72" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <rect x="30" y="85" width="60" height="8" rx="3" fill="#1DB8A0" opacity="0.3"/>
-      <rect x="33" y="87" width="20" height="4" rx="2" fill="#1DB8A0"/>
-      <rect x="33" y="87" width="8" height="4" rx="2" fill="white" opacity="0.5"/>
-    </svg>
-  );
-}
-
-function GatoDescansando() {
-  return (
-    <svg viewBox="0 0 120 120" width="100" height="100">
-      <ellipse cx="60" cy="70" rx="28" ry="22" fill="#7C5CBF"/>
-      <polygon points="38,52 44,36 50,52" fill="#7C5CBF"/>
-      <polygon points="70,52 76,36 82,52" fill="#7C5CBF"/>
-      <polygon points="40,52 44,40 48,52" fill="#F4C5D0"/>
-      <polygon points="72,52 76,40 80,52" fill="#F4C5D0"/>
-      <path d="M48 63 Q52 60 56 63" stroke="#1A1F2E" strokeWidth="2" fill="none" strokeLinecap="round"/>
-      <path d="M64 63 Q68 60 72 63" stroke="#1A1F2E" strokeWidth="2" fill="none" strokeLinecap="round"/>
-      <ellipse cx="60" cy="71" rx="4" ry="3" fill="#F4A0B0"/>
-      <path d="M50 78 Q60 85 70 78" stroke="#1A1F2E" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-      <line x1="45" y1="70" x2="30" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="45" y1="73" x2="30" y2="73" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="70" x2="90" y2="67" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <line x1="75" y1="73" x2="90" y2="73" stroke="#1A1F2E" strokeWidth="1.2" strokeLinecap="round"/>
-      <text x="50" y="45" fontSize="14" fill="#1DB8A0">z</text>
-      <text x="62" y="38" fontSize="10" fill="#1DB8A0" opacity="0.7">z</text>
-    </svg>
-  );
-}
-
-function GatoDurmiendo() {
-  return (
-    <svg viewBox="0 0 140 100" width="130" height="100">
-      <ellipse cx="70" cy="62" rx="42" ry="18" fill="#7C5CBF"/>
-      <ellipse cx="35" cy="55" rx="18" ry="16" fill="#7C5CBF"/>
-      <polygon points="25,44 29,32 33,44" fill="#7C5CBF"/>
-      <polygon points="37,44 41,32 45,44" fill="#7C5CBF"/>
-      <polygon points="26,44 29,35 32,44" fill="#F4C5D0"/>
-      <polygon points="38,44 41,35 44,44" fill="#F4C5D0"/>
-      <path d="M27 56 Q35 53 43 56" stroke="#1A1F2E" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-      <ellipse cx="35" cy="61" rx="3" ry="2" fill="#F4A0B0"/>
-      <line x1="22" y1="59" x2="12" y2="57" stroke="#1A1F2E" strokeWidth="1" strokeLinecap="round"/>
-      <line x1="22" y1="62" x2="12" y2="62" stroke="#1A1F2E" strokeWidth="1" strokeLinecap="round"/>
-      <path d="M55 65 Q90 55 115 65" stroke="#7C5CBF" strokeWidth="6" fill="none" strokeLinecap="round"/>
-      <circle cx="115" cy="65" r="6" fill="#7C5CBF"/>
-      <text x="90" y="48" fontSize="16" fill="#1DB8A0">z</text>
-      <text x="105" y="40" fontSize="12" fill="#1DB8A0" opacity="0.7">z</text>
-      <text x="116" y="33" fontSize="9" fill="#1DB8A0" opacity="0.4">z</text>
-    </svg>
-  );
 }
 
 function Timer() {
@@ -163,10 +113,41 @@ function Timer() {
   const [manualHoras, setManualHoras] = useState("");
   const [manualMinutos, setManualMinutos] = useState("");
   const [manualFecha, setManualFecha] = useState(new Date().toISOString().split("T")[0]);
+  const [frase, setFrase] = useState(getFrase("trabajo", false, 0));
+  const [fadeIn, setFadeIn] = useState(true);
+  const faseRef = useRef(fasePomodoro);
+  const corriendoRef = useRef(corriendo);
+  const ciclosRef = useRef(ciclosPomodoro);
+
+  useEffect(() => { faseRef.current = fasePomodoro; }, [fasePomodoro]);
+  useEffect(() => { corriendoRef.current = corriendo; }, [corriendo]);
+  useEffect(() => { ciclosRef.current = ciclosPomodoro; }, [ciclosPomodoro]);
 
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  // Rotar frases cada 8 segundos
+  useEffect(() => {
+    if (modo !== "pomodoro") return;
+    const intervalo = setInterval(() => {
+      setFadeIn(false);
+      setTimeout(() => {
+        setFrase(getFrase(faseRef.current, corriendoRef.current, ciclosRef.current));
+        setFadeIn(true);
+      }, 400);
+    }, 8000);
+    return () => clearInterval(intervalo);
+  }, [modo]);
+
+  // Actualizar frase al cambiar fase
+  useEffect(() => {
+    setFadeIn(false);
+    setTimeout(() => {
+      setFrase(getFrase(fasePomodoro, corriendo, ciclosPomodoro));
+      setFadeIn(true);
+    }, 400);
+  }, [fasePomodoro, corriendo]);
 
   async function cargarDatos() {
     setCargando(true);
@@ -238,13 +219,16 @@ function Timer() {
                 setCiclosPomodoro(nuevosCiclos);
                 if (nuevosCiclos % 4 === 0) {
                   setFasePomodoro("descanso-largo");
+                  sendNotification({ title: "¡Ciclo completado!", body: "4 ciclos seguidos. Tómate un descanso largo, lo mereces." });
                   return getTiempoDescansoLargo();
                 } else {
                   setFasePomodoro("descanso");
+                  sendNotification({ title: "Tiempo de descanso", body: "Buen trabajo. Descansa un momento antes del siguiente ciclo." });
                   return getTiempoDescanso();
                 }
               } else {
                 setFasePomodoro("trabajo");
+                sendNotification({ title: "¡A trabajar!", body: "Descanso terminado. Siguiente ciclo, vamos." });
                 return getTiempoTrabajo();
               }
             }
@@ -384,15 +368,6 @@ function Timer() {
     total: registros.filter((r) => r.proyecto_id === p.id).reduce((acc, r) => acc + r.duracion, 0),
   })).filter((p) => p.total > 0);
 
-  const getGato = () => {
-    if (modo === "libre") return null;
-    if (!corriendo && ciclosPomodoro === 0) return <GatoEsperando />;
-    if (fasePomodoro === "trabajo" && corriendo) return <GatoTrabajando />;
-    if (fasePomodoro === "descanso") return <GatoDescansando />;
-    if (fasePomodoro === "descanso-largo") return <GatoDurmiendo />;
-    return <GatoEsperando />;
-  };
-
   if (cargando) {
     return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando timer...</p></div>;
   }
@@ -400,13 +375,14 @@ function Timer() {
   return (
     <div className="p-8">
 
-      <div className="mb-8">
+      <div className="mb-6">
         <h2 className="text-2xl font-bold text-white">Time Tracker</h2>
         <p className="text-[#6B7280] mt-1">
           Hoy: {formatTiempoCorto(totalHoy)} · Esta semana: {formatTiempoCorto(totalSemana)}
         </p>
       </div>
 
+      {/* Tabs */}
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => { setModo("libre"); setCorriendo(false); setSegundos(0); }}
@@ -422,18 +398,33 @@ function Timer() {
         </button>
       </div>
 
-      <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-8 mb-6">
+      {/* BLOQUE 1 — Timer */}
+      <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-8 mb-4">
 
         {modo === "pomodoro" && (
-          <div className="flex flex-col items-center mb-4">
-            <div className="mb-2">{getGato()}</div>
-            <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-col items-center mb-6">
+
+            {/* Frase motivadora */}
+            <p
+              className="text-sm text-center mb-5 font-medium transition-opacity duration-400"
+              style={{
+                opacity: fadeIn ? 1 : 0,
+                color: fasePomodoro === "trabajo" ? "#1DB8A0" : "#7C5CBF",
+              }}
+            >
+              "{frase}"
+            </p>
+
+            {/* Badge fase + ciclo */}
+            <div className="flex items-center gap-3 mb-4">
               <span className={"text-sm font-medium px-3 py-1 rounded-full " + (fasePomodoro === "trabajo" ? "text-[#1DB8A0] bg-[#1DB8A0]/10" : "text-[#7C5CBF] bg-[#7C5CBF]/10")}>
                 {fasePomodoro === "trabajo" ? "Tiempo de trabajo" : fasePomodoro === "descanso" ? "Descanso corto" : "Descanso largo"}
               </span>
               <span className="text-[#6B7280] text-xs">Ciclo {ciclosPomodoro + 1}</span>
             </div>
-            <div className="flex gap-2 mb-3">
+
+            {/* Presets */}
+            <div className="flex gap-2 mb-4">
               {tiemposPreset.map((preset, index) => (
                 <button key={index} onClick={() => cambiarPreset(index)}
                   className={"text-xs px-3 py-1.5 rounded-lg border transition-colors " + (!usarCustom && presetSeleccionado === index ? "border-[#7C5CBF] text-[#7C5CBF] bg-[#7C5CBF]/10" : "border-[#252B3B] text-[#6B7280] hover:text-white")}>
@@ -441,7 +432,9 @@ function Timer() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 mb-2">
+
+            {/* Custom */}
+            <div className="flex items-center gap-2">
               <input value={trabajoCustom} onChange={(e) => setTrabajoCustom(e.target.value)}
                 placeholder="Trabajo (min)" type="number"
                 className={"w-28 bg-[#1A1F2E] border rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none " + (usarCustom ? "border-[#7C5CBF]" : "border-[#252B3B] focus:border-[#7C5CBF]")} />
@@ -454,42 +447,15 @@ function Timer() {
                 Aplicar
               </button>
             </div>
-            <p className="text-[#6B7280] text-xs text-center max-w-xs">
-              El pomodoro te ayuda a llevar el control de tus pausas. El tiempo trabajado se registra con el Timer libre.
-            </p>
           </div>
         )}
 
-        <div className={"text-center font-bold text-white mb-6 font-mono " + (modo === "pomodoro" ? "text-5xl" : "text-6xl")}>
+        {/* Contador */}
+        <div className={"text-center font-bold text-white font-mono " + (modo === "pomodoro" ? "text-6xl mb-6" : "text-7xl mb-8")}>
           {modo === "libre" ? formatTiempo(segundos) : formatTiempo(tiempoPomodoro)}
         </div>
 
-        {modo === "libre" && (
-          <div className="grid grid-cols-2 gap-4 mb-6 text-left">
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Proyecto</label>
-              <select value={proyectoId} onChange={(e) => { setProyectoId(e.target.value); cargarTareasProyecto(e.target.value); }}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
-                <option value="">Selecciona un proyecto</option>
-                {proyectos.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Tarea</label>
-              <select value={tareaId} onChange={(e) => setTareaId(e.target.value)}
-                disabled={!proyectoId}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0] disabled:opacity-50">
-                <option value="">Selecciona una tarea</option>
-                {tareasProyecto.map((t) => (
-                  <option key={t.id} value={t.id}>{t.nombre}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
+        {/* Controles */}
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={modo === "pomodoro" ? iniciarPomodoro : () => setCorriendo(!corriendo)}
@@ -517,9 +483,10 @@ function Timer() {
           )}
         </div>
 
+        {/* Música */}
         <div className="mt-6 border-t border-[#252B3B] pt-5">
           <p className="text-[#6B7280] text-xs text-center mb-3">
-            La musica potencia el flow. Pon tu playlist favorita y deja que Flowo haga el resto
+            La música potencia el flow. Pon tu playlist favorita y deja que Flowo haga el resto
           </p>
           <div className="flex justify-center gap-3">
             <button onClick={() => openUrl("https://open.spotify.com")}
@@ -534,8 +501,60 @@ function Timer() {
         </div>
       </div>
 
+      {/* BLOQUE 2 — Proyecto y tarea (solo timer libre) */}
+      {modo === "libre" && (
+        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6 mb-4">
+          <div className="mb-4">
+            <h3 className="text-white font-medium">¿En qué estás trabajando?</h3>
+            <p className="text-[#6B7280] text-xs mt-1">
+              Selecciona el proyecto y la tarea antes de iniciar. Al guardar, el tiempo queda registrado automáticamente.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[#6B7280] text-xs mb-1 block">Proyecto</label>
+              <select value={proyectoId} onChange={(e) => { setProyectoId(e.target.value); cargarTareasProyecto(e.target.value); }}
+                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
+                <option value="">Selecciona un proyecto</option>
+                {proyectos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[#6B7280] text-xs mb-1 block">Tarea</label>
+              <select value={tareaId} onChange={(e) => setTareaId(e.target.value)}
+                disabled={!proyectoId}
+                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0] disabled:opacity-50">
+                <option value="">
+                  {proyectoId ? "Selecciona una tarea" : "Primero elige un proyecto"}
+                </option>
+                {tareasProyecto.map((t) => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {proyectoId && tareasProyecto.length === 0 && (
+            <p className="text-[#6B7280] text-xs mt-3">
+              Este proyecto no tiene tareas pendientes. Agrégalas desde la sección Tareas.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Pomodoro — nota informativa */}
+      {modo === "pomodoro" && (
+        <div className="bg-[#141824] border border-[#252B3B] rounded-xl px-5 py-4 mb-4">
+          <p className="text-[#6B7280] text-xs">
+            <span className="text-white font-medium">¿Cómo funciona el Pomodoro?</span> — Trabaja en bloques de tiempo concentrado con pausas programadas. Al terminar cada fase recibirás una notificación. Para registrar el tiempo trabajado en un proyecto, usa el <span className="text-[#1DB8A0]">Timer libre</span>.
+          </p>
+        </div>
+      )}
+
+      {/* BLOQUE 3 — Registros */}
       {porProyecto.length > 0 && (
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-6">
+        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-4">
           <h3 className="text-white font-medium mb-3">Horas por proyecto</h3>
           <div className="space-y-2">
             {porProyecto.map((p) => {

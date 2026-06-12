@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import jsPDF from "jspdf";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 
 interface HistorialEstado {
   estado: string;
@@ -78,18 +79,21 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
   const [nuevoConceptoMonto, setNuevoConceptoMonto] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [tareasRealizadasForm, setTareasRealizadasForm] = useState<string[]>([]);
+  const [abonoInicial, setAbonoInicial] = useState("");
 
   useEffect(() => {
     cargarDatos();
   }, []);
-useEffect(() => {
-  if (proyectoPreseleccionado && proyectos.length > 0) {
-    setProyectoId(proyectoPreseleccionado);
-    setMostrarForm(true);
-    autocompletarDesdeProyecto(proyectoPreseleccionado);
-    if (onLimpiarProyecto) onLimpiarProyecto();
-  }
-}, [proyectoPreseleccionado, proyectos]);
+
+  useEffect(() => {
+    if (proyectoPreseleccionado && proyectos.length > 0) {
+      setProyectoId(proyectoPreseleccionado);
+      setMostrarForm(true);
+      autocompletarDesdeProyecto(proyectoPreseleccionado);
+      if (onLimpiarProyecto) onLimpiarProyecto();
+    }
+  }, [proyectoPreseleccionado, proyectos]);
+
   async function cargarDatos() {
     setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -181,6 +185,14 @@ useEffect(() => {
     const proyecto = proyectos.find((p) => p.id === proyectoId);
     const numero = "FAC-" + String(facturas.length + 1).padStart(3, "0");
     const hoy = new Date().toISOString().split("T")[0];
+    const totalConceptos = conceptos.reduce((a, c) => a + c.monto, 0);
+    const abonoNum = abonoInicial ? Number(abonoInicial) : 0;
+    const estadoInicial = abonoNum >= totalConceptos && abonoNum > 0 ? "pagada" : abonoNum > 0 ? "abonada" : "pendiente";
+
+    const historialInicial = [{ estado: "Creada", fecha: hoy }];
+    if (abonoNum > 0) {
+      historialInicial.push({ estado: "Abono inicial de $" + abonoNum.toLocaleString() + " registrado", fecha: hoy });
+    }
 
     const { data } = await supabase.from("facturas").insert({
       user_id: user?.id,
@@ -190,12 +202,12 @@ useEffect(() => {
       proyecto_nombre: proyecto?.nombre || "",
       conceptos,
       tareas_realizadas: tareasRealizadasForm,
-      abonado: 0,
-      estado: "pendiente",
+      abonado: abonoNum,
+      estado: estadoInicial,
       fecha_emision: hoy,
       fecha_vencimiento: fechaVencimiento,
       notas: "",
-      historial: [{ estado: "Creada", fecha: hoy }],
+      historial: historialInicial,
     }).select().single();
 
     if (data) {
@@ -213,6 +225,7 @@ useEffect(() => {
     setConceptos([{ descripcion: "", monto: 0 }]);
     setTareasRealizadasForm([]);
     setFechaVencimiento("");
+    setAbonoInicial("");
     setMostrarForm(false);
     setGuardando(false);
   }
@@ -303,6 +316,11 @@ useEffect(() => {
     setFacturas(facturas.map((f) => f.id === id ? { ...f, notas } : f));
   }
 
+  async function eliminarFactura(id: string) {
+    await supabase.from("facturas").delete().eq("id", id);
+    setFacturas(facturas.filter((f) => f.id !== id));
+  }
+
   function enviarPorWhatsApp(factura: Factura) {
     const proyecto = proyectos.find((p) => p.id === factura.proyecto_id);
     const telefono = proyecto ? clientesMap[proyecto.cliente_id] : "";
@@ -320,285 +338,307 @@ useEffect(() => {
     );
     openUrl("https://wa.me/" + (telefono || "") + "?text=" + mensaje);
   }
-async function generarPDF(factura: Factura) {
-  const doc = new jsPDF();
-  const total = getTotalFactura(factura);
-  const restante = total - factura.abonado;
 
-  const teal = [29, 184, 160] as [number, number, number];
-  const ink = [26, 31, 46] as [number, number, number];
-  const gris = [107, 114, 128] as [number, number, number];
+  async function generarPDF(factura: Factura) {
+    const doc = new jsPDF();
+    const total = getTotalFactura(factura);
+    const restante = total - factura.abonado;
 
-  // Cargar perfil del freelancer
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: perfil } = await supabase
-    .from("perfiles")
-    .select("marca_nombre, marca_desc, marca_web, telefono, moneda")
-    .eq("user_id", user?.id)
-    .single();
+    const teal = [29, 184, 160] as [number, number, number];
+    const ink = [26, 31, 46] as [number, number, number];
+    const gris = [107, 114, 128] as [number, number, number];
 
-  const nombreFreelancer = user?.user_metadata?.nombre || "";
-  const marcaNombre = perfil?.marca_nombre || "";
-  const marcaDesc = perfil?.marca_desc || "";
-  const marcaWeb = perfil?.marca_web || "";
-  const telefono = perfil?.telefono || "";
-  const moneda = perfil?.moneda || "USD";
-  const emailFreelancer = user?.email || "";
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: perfil } = await supabase
+      .from("perfiles")
+      .select("marca_nombre, marca_desc, marca_web, telefono, moneda")
+      .eq("user_id", user?.id)
+      .single();
 
-  // Header oscuro
-  doc.setFillColor(...ink);
-  doc.rect(0, 0, 210, 50, "F");
+    const nombreFreelancer = user?.user_metadata?.nombre || "";
+    const marcaNombre = perfil?.marca_nombre || "";
+    const marcaDesc = perfil?.marca_desc || "";
+    const marcaWeb = perfil?.marca_web || "";
+    const telefono = perfil?.telefono || "";
+    const moneda = perfil?.moneda || "USD";
+    const emailFreelancer = user?.email || "";
 
-// Logo del usuario (desde Supabase Storage)
-try {
-  const { data: logoData } = await supabase.storage
-    .from("avatars")
-    .download(user?.id + "/logo");
+    // Header oscuro
+    doc.setFillColor(255, 255, 255);
+doc.rect(0, 0, 210, 50, "F");
 
-  if (logoData) {
-    const reader = new FileReader();
-    const logoBase64User: string = await new Promise((resolve) => {
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(logoData);
-    });
-    // Detectar formato
-    const esJpeg = logoBase64User.startsWith("data:image/jpeg");
-    const formato = esJpeg ? "JPEG" : "PNG";
-    doc.addImage(logoBase64User, "PNG", 12, footerY + 6, 40, 12);
-  }
-} catch (_) {
-  // Si no tiene logo subido, el espacio queda vacío
-}
-  
+    // Logo del usuario en el header (desde Supabase Storage)
+    try {
+      const { data: logoData } = await supabase.storage
+        .from("avatars")
+        .download(user?.id + "/logo");
 
-  // Número de factura y estado
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text("FACTURA", 155, 14);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text(factura.numero, 155, 20);
-  doc.text("Emisión: " + factura.fecha_emision, 155, 26);
-  doc.text("Vencimiento: " + factura.fecha_vencimiento, 155, 32);
+      if (logoData) {
+        const reader = new FileReader();
+        const logoBase64User: string = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(logoData);
+        });
 
-  // Badge de estado
-  const estadoColors: Record<string, [number, number, number]> = {
-    pagada: [29, 184, 160],
-    pendiente: [124, 92, 191],
-    abonada: [29, 184, 160],
-    vencida: [244, 124, 92],
-  };
-  const estadoColor = estadoColors[factura.estado] || gris;
-  doc.setFillColor(...estadoColor);
-  doc.roundedRect(155, 35, 35, 8, 2, 2, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.text(factura.estado.toUpperCase(), 157, 40.5);
+        const img = new Image();
+        await new Promise((resolve) => {
+          img.onload = resolve;
+          img.src = logoBase64User;
+        });
 
-  // Sección EMISOR + CLIENTE
-  let y = 62;
-  doc.setTextColor(...gris);
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.text("EMITIDO POR", 14, y);
-  doc.text("CLIENTE", 110, y);
-  y += 6;
+        const maxW = 50;
+        const maxH = 28;
+        const ratio = Math.min(maxW / img.width, maxH / img.height);
+        const w = img.width * ratio;
+        const h = img.height * ratio;
+        const x = 12;
+        const y = 10 + (maxH - h) / 2;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(30, 30, 30);
-  doc.text(nombreFreelancer, 14, y);
-  doc.text(factura.cliente_nombre, 110, y);
-  y += 5;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...gris);
-  if (marcaNombre) doc.text(marcaNombre, 14, y);
-  doc.text("Proyecto: " + factura.proyecto_nombre, 110, y);
-  y += 4;
-  if (marcaDesc) doc.text(marcaDesc, 14, y);
-  y += 4;
-  if (emailFreelancer) doc.text(emailFreelancer, 14, y);
-  y += 4;
-  if (telefono) doc.text(telefono, 14, y);
-  y += 4;
-  if (marcaWeb) doc.text(marcaWeb, 14, y);
-
-  // Línea separadora teal
-  y += 6;
-  doc.setDrawColor(...teal);
-  doc.setLineWidth(0.8);
-  doc.line(14, y, 196, y);
-  y += 8;
-
-  // Tabla de conceptos - Header
-  doc.setFillColor(245, 245, 247);
-  doc.rect(14, y - 2, 182, 8, "F");
-  doc.setTextColor(...gris);
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "bold");
-  doc.text("CONCEPTO", 17, y + 3.5);
-  doc.text("MONTO", 178, y + 3.5, { align: "right" });
-  y += 10;
-
-  // Conceptos
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(30, 30, 30);
-
-  factura.conceptos.forEach((c, i) => {
-    if (i % 2 === 0) {
-      doc.setFillColor(252, 252, 252);
-      doc.rect(14, y - 4, 182, 8, "F");
+        const formato = logoBase64User.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+        doc.addImage(logoBase64User, formato, x, y, w, h);
+      }
+    } catch (_) {
+      // Sin logo, espacio vacío
     }
-    doc.text(c.descripcion, 17, y);
-    doc.text(moneda + " " + c.monto.toLocaleString(), 178, y, { align: "right" });
-    y += 9;
-  });
-  // Tareas realizadas
-  if (factura.tareas_realizadas && factura.tareas_realizadas.length > 0) {
-    y += 4;
+
+    // Número de factura y estado
+    doc.setTextColor(30, 30, 30);
+doc.setFontSize(9);
+doc.setFont("helvetica", "bold");
+doc.text("FACTURA", 155, 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(factura.numero, 155, 20);
+    doc.text("Emisión: " + factura.fecha_emision, 155, 26);
+    doc.text("Vencimiento: " + factura.fecha_vencimiento, 155, 32);
+
+    const estadoColors: Record<string, [number, number, number]> = {
+      pagada: [29, 184, 160],
+      pendiente: [124, 92, 191],
+      abonada: [29, 184, 160],
+      vencida: [244, 124, 92],
+    };
+    const estadoColor = estadoColors[factura.estado] || gris;
+    doc.setFillColor(...estadoColor);
+    doc.roundedRect(155, 35, 35, 8, 2, 2, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text(factura.estado.toUpperCase(), 157, 40.5);
+
     doc.setDrawColor(220, 220, 220);
+doc.setLineWidth(0.3);
+doc.line(0, 52, 210, 52);
+
+let y = 62;
+    doc.setTextColor(...gris);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text("EMITIDO POR", 14, y);
+    doc.text("CLIENTE", 110, y);
+    y += 6;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(30, 30, 30);
+    doc.text(nombreFreelancer, 14, y);
+    doc.text(factura.cliente_nombre, 110, y);
+    y += 5;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...gris);
+    if (marcaNombre) doc.text(marcaNombre, 14, y);
+    doc.text("Proyecto: " + factura.proyecto_nombre, 110, y);
+    y += 4;
+    if (marcaDesc) doc.text(marcaDesc, 14, y);
+    y += 4;
+    if (emailFreelancer) doc.text(emailFreelancer, 14, y);
+    y += 4;
+    if (telefono) doc.text(telefono, 14, y);
+    y += 4;
+    if (marcaWeb) doc.text(marcaWeb, 14, y);
+
+    y += 6;
+    doc.setDrawColor(...teal);
+    doc.setLineWidth(0.8);
     doc.line(14, y, 196, y);
     y += 8;
 
     doc.setFillColor(245, 245, 247);
-    doc.rect(14, y - 3, 182, 8, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
+    doc.rect(14, y - 2, 182, 8, "F");
     doc.setTextColor(...gris);
-    doc.text("TAREAS REALIZADAS", 17, y + 2);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "bold");
+    doc.text("CONCEPTO", 17, y + 3.5);
+    doc.text("MONTO", 178, y + 3.5, { align: "right" });
     y += 10;
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    factura.tareas_realizadas.forEach((tarea) => {
-      doc.setTextColor(...teal);
-      doc.text("✓", 17, y);
-      doc.setTextColor(50, 50, 50);
-      doc.text(tarea, 24, y);
-      y += 7;
-    });
-  }
-  // Línea y totales
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.4);
-  doc.line(14, y, 196, y);
-  y += 7;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(30, 30, 30);
-  doc.text("TOTAL", 17, y);
-  doc.setTextColor(...teal);
-  doc.text(moneda + " " + total.toLocaleString(), 178, y, { align: "right" });
-  y += 8;
-
-  if (factura.abonado > 0 && factura.estado !== "pagada") {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...gris);
-    doc.text("Abonado", 17, y);
-    doc.text(moneda + " " + factura.abonado.toLocaleString(), 178, y, { align: "right" });
-    y += 7;
-    doc.setTextColor(244, 124, 92);
-    doc.setFont("helvetica", "bold");
-    doc.text("Saldo pendiente", 17, y);
-    doc.text(moneda + " " + restante.toLocaleString(), 178, y, { align: "right" });
-    y += 7;
-  }
-
-  if (factura.estado === "pagada") {
-    y += 4;
-    doc.setFillColor(...teal);
-    doc.roundedRect(14, y, 182, 10, 2, 2, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("✓ FACTURA PAGADA COMPLETAMENTE", 105, y + 6.5, { align: "center" });
-    y += 16;
-  }
+    doc.setTextColor(30, 30, 30);
 
-  // Notas
-  if (factura.notas) {
-    y += 4;
+    factura.conceptos.forEach((c, i) => {
+      if (i % 2 === 0) {
+        doc.setFillColor(252, 252, 252);
+        doc.rect(14, y - 4, 182, 8, "F");
+      }
+      doc.text(c.descripcion, 17, y);
+      doc.text(moneda + " " + c.monto.toLocaleString(), 178, y, { align: "right" });
+      y += 9;
+    });
+
+    if (factura.tareas_realizadas && factura.tareas_realizadas.length > 0) {
+      y += 4;
+      doc.setDrawColor(220, 220, 220);
+      doc.line(14, y, 196, y);
+      y += 8;
+
+      doc.setFillColor(245, 245, 247);
+      doc.rect(14, y - 3, 182, 8, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...gris);
+      doc.text("TAREAS REALIZADAS", 17, y + 2);
+      y += 10;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      factura.tareas_realizadas.forEach((tarea) => {
+        doc.setTextColor(...teal);
+        doc.text("✓", 17, y);
+        doc.setTextColor(50, 50, 50);
+        doc.text(tarea, 24, y);
+        y += 7;
+      });
+    }
+
     doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.4);
     doc.line(14, y, 196, y);
-    y += 8;
+    y += 7;
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(...gris);
-    doc.text("NOTAS", 17, y);
-    y += 6;
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    doc.text("TOTAL", 17, y);
+    doc.setTextColor(...teal);
+    doc.text(moneda + " " + total.toLocaleString(), 178, y, { align: "right" });
+    y += 8;
+
+    if (factura.abonado > 0 && factura.estado !== "pagada") {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...gris);
+      doc.text("Abonado", 17, y);
+      doc.text(moneda + " " + factura.abonado.toLocaleString(), 178, y, { align: "right" });
+      y += 7;
+      doc.setTextColor(244, 124, 92);
+      doc.setFont("helvetica", "bold");
+      doc.text("Saldo pendiente", 17, y);
+      doc.text(moneda + " " + restante.toLocaleString(), 178, y, { align: "right" });
+      y += 7;
+    }
+
+    if (factura.estado === "pagada") {
+      y += 4;
+      doc.setFillColor(...teal);
+      doc.roundedRect(14, y, 182, 10, 2, 2, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("✓ FACTURA PAGADA COMPLETAMENTE", 105, y + 6.5, { align: "center" });
+      y += 16;
+    }
+
+    if (factura.notas) {
+      y += 4;
+      doc.setDrawColor(220, 220, 220);
+      doc.line(14, y, 196, y);
+      y += 8;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...gris);
+      doc.text("NOTAS", 17, y);
+      y += 6;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(60, 60, 60);
+      const lineas = doc.splitTextToSize(factura.notas, 170);
+      doc.text(lineas, 17, y);
+      y += lineas.length * 5;
+    }
+
+    const footerHeight = 32;
+    const footerY = 297 - footerHeight;
+
+    doc.setFillColor(...ink);
+    doc.rect(0, footerY, 210, footerHeight, "F");
+
+    doc.setTextColor(...teal);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Flowo", 14, footerY + 12);
+
+    doc.setFontSize(5);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(60, 60, 60);
-    const lineas = doc.splitTextToSize(factura.notas, 170);
-    doc.text(lineas, 17, y);
-    y += lineas.length * 5;
+    doc.text("Plataforma para Freelancers", 14, footerY + 17);
+
+    const legalText =
+      "Este documento ha sido generado electrónicamente como constancia de una transacción entre las partes. Su finalidad es servir como comprobante de pago, registro de servicios prestados y respaldo comercial. La aceptación y uso de este documento estarán sujetos a la legislación aplicable en la jurisdicción correspondiente.";
+
+    doc.setTextColor(220, 220, 220);
+    doc.setFontSize(5.5);
+    const legalLines = doc.splitTextToSize(legalText, 120);
+    doc.text(legalLines, 70, footerY + 10);
+
+    doc.setFontSize(5);
+    doc.setTextColor(180, 180, 180);
+    doc.text("Generado con Flowo · appflowo.com", 70, footerY + 23);
+
+    const pdfBytes = doc.output("arraybuffer");
+    const { writeFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+    await writeFile(
+      factura.numero + ".pdf",
+      new Uint8Array(pdfBytes),
+      { baseDir: BaseDirectory.Download }
+    );
+    sendNotification({ title: "PDF guardado", body: factura.numero + ".pdf guardado en Descargas" });
   }
 
-  // Footer legal
-// =========================
-// FOOTER
-// =========================
+  async function enviarPorEmail(factura: Factura) {
+    const proyecto = proyectos.find((p) => p.id === factura.proyecto_id);
+    const emailCliente = proyecto ? clientesEmailMap[proyecto.cliente_id] : "";
 
-const footerHeight = 32;
-const footerY = 297 - footerHeight;
+    if (!emailCliente) {
+      sendNotification({ title: "Sin email", body: "Este cliente no tiene email registrado." });
+      return;
+    }
 
-// Fondo
-doc.setFillColor(...ink);
-doc.rect(0, footerY, 210, footerHeight, "F");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        "https://pvwwfsdlifwiwjiznrku.supabase.co/functions/v1/enviar-factura",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + session?.access_token,
+          },
+          body: JSON.stringify({ factura, emailCliente }),
+        }
+      );
 
-// Logo / Marca
-doc.setTextColor(...teal);
-doc.setFont("helvetica", "bold");
-doc.setFontSize(18);
-doc.text("Flowo", 14, footerY + 12);
-
-// Subtítulo pequeño
-doc.setFontSize(5);
-doc.setFont("helvetica", "normal");
-doc.text("Plataforma para Freelancers", 14, footerY + 17);
-
-// Texto legal
-const legalText =
-  "Este documento ha sido generado electrónicamente como constancia de una transacción entre las partes. Su finalidad es servir como comprobante de pago, registro de servicios prestados y respaldo comercial. La aceptación y uso de este documento estarán sujetos a la legislación aplicable en la jurisdicción correspondiente.";
-
-doc.setTextColor(220, 220, 220);
-doc.setFontSize(5.5);
-
-const legalLines = doc.splitTextToSize(legalText, 120);
-
-doc.text(
-  legalLines,
-  70,
-  footerY + 10
-);
-
-// Línea inferior
-doc.setFontSize(5);
-doc.setTextColor(180, 180, 180);
-
-doc.text(
-  "Generado con Flowo · appflowo.com",
-  70,
-  footerY + 23
-);
-
-  // Guardar
-  const pdfBytes = doc.output("arraybuffer");
-  const { writeFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-  await writeFile(
-    factura.numero + ".pdf",
-    new Uint8Array(pdfBytes),
-    { baseDir: BaseDirectory.Download }
-  );
-  alert("PDF guardado en Descargas: " + factura.numero + ".pdf");
-}
+      const data = await res.json();
+      if (data.ok) {
+        sendNotification({ title: "Factura enviada", body: "Enviada correctamente a " + emailCliente });
+      } else {
+        sendNotification({ title: "Error al enviar", body: "No se pudo enviar la factura. Intenta de nuevo." });
+      }
+    } catch (error) {
+      sendNotification({ title: "Error de conexión", body: "No se pudo conectar. Intenta de nuevo." });
+    }
+  }
 
   const facturasActivas = facturas.filter((f) => f.estado !== "pagada");
   const facturasPagadas = facturas.filter((f) => f.estado === "pagada");
@@ -620,39 +660,7 @@ doc.text(
   if (cargando) {
     return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando facturas...</p></div>;
   }
-async function enviarPorEmail(factura: Factura) {
-  const proyecto = proyectos.find((p) => p.id === factura.proyecto_id);
-  const emailCliente = proyecto ? clientesEmailMap[proyecto.cliente_id] : "";
 
-  if (!emailCliente) {
-    alert("Este cliente no tiene email registrado.");
-    return;
-  }
-
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(
-      "https://pvwwfsdlifwiwjiznrku.supabase.co/functions/v1/enviar-factura",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + session?.access_token,
-        },
-        body: JSON.stringify({ factura, emailCliente }),
-      }
-    );
-
-    const data = await res.json();
-    if (data.ok) {
-      alert("Factura enviada a " + emailCliente);
-    } else {
-      alert("Error al enviar: " + JSON.stringify(data.error));
-    }
-  } catch (error) {
-    alert("Error de conexión: " + error);
-  }
-}
   return (
     <div className="p-8">
 
@@ -743,30 +751,50 @@ async function enviarPorEmail(factura: Factura) {
             </p>
           </div>
 
-{tareasRealizadasForm.length > 0 && (
-  <div className="mb-4">
-    <label className="text-[#6B7280] text-xs mb-2 block">
-      Tareas realizadas — {tareasRealizadasForm.length} incluidas · puedes quitar las que no quieras mostrar
-    </label>
-    <div className="bg-[#1A1F2E] border border-[#252B3B] rounded-lg p-3 space-y-2">
-      {tareasRealizadasForm.map((t, i) => (
-        <div key={i} className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[#1DB8A0] text-xs">✓</span>
-            <p className="text-white text-xs">{t}</p>
+          {tareasRealizadasForm.length > 0 && (
+            <div className="mb-4">
+              <label className="text-[#6B7280] text-xs mb-2 block">
+                Tareas realizadas — {tareasRealizadasForm.length} incluidas · puedes quitar las que no quieras mostrar
+              </label>
+              <div className="bg-[#1A1F2E] border border-[#252B3B] rounded-lg p-3 space-y-2">
+                {tareasRealizadasForm.map((t, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#1DB8A0] text-xs">✓</span>
+                      <p className="text-white text-xs">{t}</p>
+                    </div>
+                    <button
+                      onClick={() => setTareasRealizadasForm(tareasRealizadasForm.filter((_, idx) => idx !== i))}
+                      className="text-[#6B7280] text-xs hover:text-[#F47C5C] flex-shrink-0"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[#6B7280] text-xs mt-1">Solo las tareas que dejes aquí aparecerán en el PDF.</p>
+            </div>
+          )}
+
+          <div className="mb-4">
+            <label className="text-[#6B7280] text-xs mb-1 block">
+              Abono inicial del cliente — <span className="opacity-70">opcional</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                value={abonoInicial}
+                onChange={(e) => setAbonoInicial(e.target.value)}
+                placeholder="0"
+                type="number"
+                className="w-40 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]"
+              />
+              {abonoInicial && Number(abonoInicial) > 0 && (
+                <p className="text-[#1DB8A0] text-xs">
+                  Restante: ${(conceptos.reduce((a, c) => a + c.monto, 0) - Number(abonoInicial)).toLocaleString()}
+                </p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={() => setTareasRealizadasForm(tareasRealizadasForm.filter((_, idx) => idx !== i))}
-            className="text-[#6B7280] text-xs hover:text-[#F47C5C] flex-shrink-0"
-          >
-            Quitar
-          </button>
-        </div>
-      ))}
-    </div>
-    <p className="text-[#6B7280] text-xs mt-1">Solo las tareas que dejes aquí aparecerán en el PDF.</p>
-  </div>
-)}
 
           <div className="flex gap-3">
             <button onClick={agregarFactura} disabled={guardando || !proyectoId || !fechaVencimiento}
@@ -1006,6 +1034,11 @@ async function enviarPorEmail(factura: Factura) {
                       {factura.estado === "pagada" && (
                         <span className="text-[#6B7280] text-xs">Factura cerrada</span>
                       )}
+                      <button
+                        onClick={() => eliminarFactura(factura.id)}
+                        className="text-[#F47C5C] text-xs border border-[#F47C5C]/30 px-3 py-1.5 rounded-lg hover:bg-[#F47C5C]/10">
+                        Eliminar
+                      </button>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => enviarPorWhatsApp(factura)}
@@ -1013,10 +1046,10 @@ async function enviarPorEmail(factura: Factura) {
                         WhatsApp
                       </button>
                       <button
-  onClick={() => enviarPorEmail(factura)}
-  className="bg-[#252B3B] text-[#6B7280] text-xs px-3 py-1.5 rounded-lg hover:text-white transition-colors">
-  Enviar por email
-</button>
+                        onClick={() => enviarPorEmail(factura)}
+                        className="bg-[#252B3B] text-[#6B7280] text-xs px-3 py-1.5 rounded-lg hover:text-white transition-colors">
+                        Enviar por email
+                      </button>
                       <button onClick={() => generarPDF(factura)}
                         className="bg-[#1DB8A0] text-[#1A1F2E] text-xs font-medium px-3 py-1.5 rounded-lg hover:opacity-90">
                         Generar PDF
