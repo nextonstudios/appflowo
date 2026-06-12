@@ -50,21 +50,24 @@ export function useUpdater() {
           }));
         }
       });
-    } catch (e) {
-      setEstado(prev => ({
-        ...prev,
-        descargando: false,
-        error: 'Error al descargar la actualización',
-      }));
-    }
+} catch (e) {
+  console.error('Error descarga:', e);
+  alert('Error descarga: ' + JSON.stringify(e));
+  setEstado(prev => ({
+    ...prev,
+    descargando: false,
+    error: 'Error al descargar la actualización',
+  }));
+}
   };
 
-  const verificar = async () => {
-    try {
-      setEstado(prev => ({ ...prev, error: null }));
-      const update = await check();
-
-      if (update?.available) {
+const verificar = async () => {
+  try {
+    setEstado(prev => ({ ...prev, error: null }));
+    const update = await check();
+    alert('check result: ' + JSON.stringify(update));
+    
+    if (update?.available) {
         updateInstancia = update;
         setEstado(prev => ({
           ...prev,
