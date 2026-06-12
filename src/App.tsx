@@ -23,7 +23,7 @@ function App() {
   const [mensajeAuth, setMensajeAuth] = useState<string | null>(null);
 
   useNotificaciones(userId);
-  const { estado: estadoUpdate, verificar: verificarUpdate, reiniciar } = useUpdater();
+  const { estado: estadoUpdate, verificar: verificarUpdate, reiniciar, descargar } = useUpdater();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -37,12 +37,10 @@ function App() {
       setUserId(session?.user?.id ?? null);
     });
 
-    // Capturar el deep link cuando Supabase redirige de vuelta a la app
     const unlistenPromise = onOpenUrl((urls) => {
       const url = urls[0];
       if (!url) return;
 
-      // Extraer los parámetros del fragment (#access_token=...&type=signup)
       const hash = url.includes("#") ? url.split("#")[1] : url.split("?")[1];
       if (!hash) return;
 
@@ -92,7 +90,7 @@ function App() {
       <Sidebar
         activePage={activePage}
         setActivePage={setActivePage}
-        hayUpdate={estadoUpdate.disponible || estadoUpdate.listo}
+        hayUpdate={estadoUpdate.disponible}
       />
       <main className="flex-1 flex flex-col ml-56">
         <div className="flex-1">
@@ -108,6 +106,7 @@ function App() {
               estadoUpdate={estadoUpdate}
               onVerificarUpdate={verificarUpdate}
               onReiniciar={reiniciar}
+              onDescargar={descargar}
             />
           )}
         </div>

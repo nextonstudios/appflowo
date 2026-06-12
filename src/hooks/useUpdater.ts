@@ -1,6 +1,6 @@
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { useState, useEffect } from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { getVersion } from '@tauri-apps/api/app';
 
 export interface UpdateState {
   disponible: boolean;
@@ -20,61 +20,32 @@ const estadoInicial: UpdateState = {
   error: null,
 };
 
-let updateInstancia: Awaited<ReturnType<typeof check>> | null = null;
+const GIST_URL = 'https://gist.githubusercontent.com/nextonstudios/f40304340ffbfe1411d22db21d135d9c/raw/gistfile1.txt';
 
 export function useUpdater() {
   const [estado, setEstado] = useState<UpdateState>(estadoInicial);
 
-  const descargar = async () => {
-    if (!updateInstancia) return;
-
-    setEstado(prev => ({ ...prev, descargando: true, progreso: 0 }));
-
+  const verificar = async () => {
     try {
-      let descargado = 0;
-      let total = 0;
+      const versionActual = await getVersion();
+      const response = await fetch(GIST_URL + '?t=' + Date.now());
+      const data = await response.json();
 
-      await updateInstancia.downloadAndInstall((event) => {
-        if (event.event === 'Started') {
-          total = event.data.contentLength ?? 0;
-        } else if (event.event === 'Progress') {
-          descargado += event.data.chunkLength;
-          const porcentaje = total > 0 ? Math.round((descargado / total) * 100) : 0;
-          setEstado(prev => ({ ...prev, progreso: porcentaje }));
-        } else if (event.event === 'Finished') {
-          setEstado(prev => ({
-            ...prev,
-            descargando: false,
-            listo: true,
-            progreso: 100,
-          }));
-        }
-      });
-} catch (e) {
-  console.error('Error descarga:', e);
-    setEstado(prev => ({
-    ...prev,
-    descargando: false,
-    error: 'Error al descargar la actualización',
-  }));
-}
-  };
+      const partes = (v: string) => v.split('.').map(Number);
+      const [ma, mi, pa] = partes(versionActual);
+      const [ma2, mi2, pa2] = partes(data.version);
 
-const verificar = async () => {
-  try {
-    setEstado(prev => ({ ...prev, error: null }));
-    const update = await check();
-        
-    if (update?.available) {
-        updateInstancia = update;
+      const hayUpdate =
+        ma2 > ma ||
+        (ma2 === ma && mi2 > mi) ||
+        (ma2 === ma && mi2 === mi && pa2 > pa);
+
+      if (hayUpdate) {
         setEstado(prev => ({
           ...prev,
           disponible: true,
-          version: update.version,
+          version: data.version,
         }));
-
-        // Descarga automática en segundo plano
-        descargar();
       } else {
         setEstado(prev => ({ ...prev, disponible: false, version: null }));
       }
@@ -83,14 +54,15 @@ const verificar = async () => {
     }
   };
 
-  const reiniciar = async () => {
-    await relaunch();
+  const descargar = async () => {
+    await openUrl('https://appflowo.com');
   };
 
-  // Verificar al montar
+  const reiniciar = async () => {};
+
   useEffect(() => {
     verificar();
   }, []);
 
-  return { estado, verificar, reiniciar };
+  return { estado, verificar, reiniciar, descargar };
 }

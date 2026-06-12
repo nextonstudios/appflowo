@@ -24,9 +24,10 @@ interface Props {
   estadoUpdate: UpdateState;
   onVerificarUpdate: () => void;
   onReiniciar: () => void;
+  onDescargar: () => void;
 }
 
-function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Props) {
+function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar, onDescargar }: Props) {
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -309,24 +310,19 @@ const [version, setVersion] = useState("");
     setServicios(servicios.filter((s) => s.id !== id));
   }
 
-  function labelBotonUpdate() {
-    if (estadoUpdate.listo) return `Reiniciar para aplicar v${estadoUpdate.version}`;
-    if (estadoUpdate.descargando) return `Descargando... ${estadoUpdate.progreso}%`;
-    if (estadoUpdate.disponible) return "Descargando actualización...";
-    return "Buscar actualizaciones";
-  }
-
+function labelBotonUpdate() {
+  if (estadoUpdate.disponible) return `Descargar v${estadoUpdate.version}`;
+  return "Buscar actualizaciones";
+}
   function accionBotonUpdate() {
-    if (estadoUpdate.listo) return onReiniciar();
-    if (estadoUpdate.descargando || estadoUpdate.disponible) return;
-    return onVerificarUpdate();
-  }
+  if (estadoUpdate.disponible) return onDescargar();
+  return onVerificarUpdate();
+}
 
-  function colorBotonUpdate() {
-    if (estadoUpdate.listo) return "bg-[#1DB8A0] text-[#1A1F2E] hover:opacity-90";
-    if (estadoUpdate.descargando || estadoUpdate.disponible) return "bg-[#252B3B] text-[#6B7280] cursor-not-allowed";
-    return "bg-[#252B3B] text-white hover:bg-[#2B3044]";
-  }
+function colorBotonUpdate() {
+  if (estadoUpdate.disponible) return "bg-[#1DB8A0] text-[#1A1F2E] hover:opacity-90";
+  return "bg-[#252B3B] text-white hover:bg-[#2B3044]";
+}
 
 if (cargando) {
   return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando perfil...</p></div>;
@@ -717,11 +713,10 @@ if (cargando) {
             )}
           </div>
           <button
-            onClick={accionBotonUpdate}
-            disabled={estadoUpdate.descargando || (estadoUpdate.disponible && !estadoUpdate.listo)}
-            className={`text-xs font-medium px-4 py-2 rounded-lg transition-all ${colorBotonUpdate()}`}>
-            {labelBotonUpdate()}
-          </button>
+   onClick={accionBotonUpdate}
+   className={`text-xs font-medium px-4 py-2 rounded-lg transition-all ${colorBotonUpdate()}`}>
+   {labelBotonUpdate()}
+ </button>
         </div>
 
         {/* Donación */}
