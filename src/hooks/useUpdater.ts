@@ -25,29 +25,6 @@ let updateInstancia: Awaited<ReturnType<typeof check>> | null = null;
 export function useUpdater() {
   const [estado, setEstado] = useState<UpdateState>(estadoInicial);
 
-  const verificar = async () => {
-    try {
-      setEstado(prev => ({ ...prev, error: null }));
-      const update = await check();
-
-      if (update?.available) {
-        updateInstancia = update;
-        setEstado(prev => ({
-          ...prev,
-          disponible: true,
-          version: update.version,
-        }));
-
-        // Descarga automática en segundo plano
-        descargar();
-      } else {
-        setEstado(prev => ({ ...prev, disponible: false, version: null }));
-      }
-} catch (e) {
-      console.error('Error updater:', e);
-    }
-  };
-
   const descargar = async () => {
     if (!updateInstancia) return;
 
@@ -79,6 +56,29 @@ export function useUpdater() {
         descargando: false,
         error: 'Error al descargar la actualización',
       }));
+    }
+  };
+
+  const verificar = async () => {
+    try {
+      setEstado(prev => ({ ...prev, error: null }));
+      const update = await check();
+
+      if (update?.available) {
+        updateInstancia = update;
+        setEstado(prev => ({
+          ...prev,
+          disponible: true,
+          version: update.version,
+        }));
+
+        // Descarga automática en segundo plano
+        descargar();
+      } else {
+        setEstado(prev => ({ ...prev, disponible: false, version: null }));
+      }
+    } catch (e) {
+      console.error('Error updater:', e);
     }
   };
 

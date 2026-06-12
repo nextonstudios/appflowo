@@ -54,6 +54,10 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
   const [errorDrive, setErrorDrive] = useState<string | null>(null);
 
   useEffect(() => {
+  getVersion().then(setVersion);
+}, []);
+
+  useEffect(() => {
     cargarPerfil();
     cargarIntegraciones();
   }, []);
@@ -159,9 +163,7 @@ function Perfil({ onLogout, estadoUpdate, onVerificarUpdate, onReiniciar }: Prop
   }
 const [version, setVersion] = useState("");
 
-useEffect(() => {
-  getVersion().then(setVersion);
-}, []);
+
 
   async function conectarGoogleDrive() {
     setConectandoDrive(true);
@@ -326,11 +328,9 @@ useEffect(() => {
     return "bg-[#252B3B] text-white hover:bg-[#2B3044]";
   }
 
-  if (cargando) {
-    if (cargando) {
-    return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando perfil...</p></div>;
-  }
-  }
+if (cargando) {
+  return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando perfil...</p></div>;
+}
 
   return (
     <div className="p-8">
@@ -686,7 +686,7 @@ useEffect(() => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-white font-medium">Version</h3>
-            <p className="text-[#6B7280] text-sm mt-0.5">Flowo v0.8 — creado por NextOn Studios</p>
+            <p className="text-[#6B7280] text-sm mt-0.5">Flowo v{version} — creado por NextOn Studios</p>
           </div>
         </div>
 
