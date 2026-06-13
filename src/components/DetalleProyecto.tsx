@@ -111,13 +111,9 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const [clienteWhatsapp, setClienteWhatsapp] = useState("");
-
-  // Subtareas
   const [subtareaAbiertaId, setSubtareaAbiertaId] = useState<string | null>(null);
   const [nuevoTituloSubtarea, setNuevoTituloSubtarea] = useState("");
   const [nuevaSubtareaPublica, setNuevaSubtareaPublica] = useState(false);
-
-  // Drive para tareas
   const [hayDrive, setHayDrive] = useState(false);
   const [crearCarpetaTarea, setCrearCarpetaTarea] = useState(false);
   const [modalCarpeta, setModalCarpeta] = useState<{
@@ -125,8 +121,6 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     carpetaExistenteId: string;
     resolve: (opcion: "usar" | "nueva") => void;
   } | null>(null);
-
-  // Actividad del cliente
   const [mensajesPortal, setMensajesPortal] = useState<MensajePortal[]>([]);
   const [respuesta, setRespuesta] = useState("");
   const [enviandoRespuesta, setEnviandoRespuesta] = useState(false);
@@ -136,7 +130,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     cargarMensajesPortal();
     tieneDriveConectado().then(setHayDrive);
 
-    // Suscripción en tiempo real a mensajes del portal
+    // Realtime — mensajes del portal
     const canal = supabase
       .channel("portal_msgs_" + proyecto.id)
       .on("postgres_changes", {
@@ -146,7 +140,6 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
         filter: "proyecto_id=eq." + proyecto.id,
       }, (payload) => {
         setMensajesPortal(prev => [...prev, payload.new as MensajePortal]);
-        // Actualizar aprobaciones en tareas
         const nuevo = payload.new as MensajePortal;
         if (nuevo.tipo === "aprobacion" && nuevo.tarea_id) {
           setTareas(prev => prev.map(t =>
@@ -156,7 +149,37 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(canal); };
+    // Realtime — registros de tiempo (se actualiza cuando el timer guarda)
+    const canalRegistros = supabase
+      .channel("registros_" + proyecto.id)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "registros_tiempo",
+        filter: "proyecto_id=eq." + proyecto.id,
+      }, () => {
+        supabase
+          .from("registros_tiempo")
+          .select("*")
+          .eq("proyecto_id", proyecto.id)
+          .order("created_at", { ascending: false })
+          .then(({ data }) => {
+            if (data) {
+              setRegistros(data.map((r: any) => ({
+                id: r.id,
+                descripcion: r.descripcion,
+                duracion: r.duracion,
+                fecha: r.fecha,
+              })));
+            }
+          });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+      supabase.removeChannel(canalRegistros);
+    };
   }, []);
 
   async function cargarDatos() {
@@ -220,6 +243,18 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     setEnviandoRespuesta(false);
   }
 
+  // Agrupar registros por tarea mostrando tiempo total acumulado
+  const registrosAgrupados = registros.reduce((acc, r) => {
+    const key = r.descripcion;
+    if (acc[key]) {
+      acc[key] = { ...acc[key], duracion: acc[key].duracion + r.duracion };
+    } else {
+      acc[key] = { ...r };
+    }
+    return acc;
+  }, {} as Record<string, Registro>);
+  const registrosMostrados = Object.values(registrosAgrupados);
+
   const totalSegundos = registros.reduce((acc, r) => acc + r.duracion, 0);
   const totalHoras = totalSegundos / 3600;
   const completadas = tareas.filter((t) => t.completada).length;
@@ -228,6 +263,8 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   const presupuesto = proyecto.servicios?.reduce((acc, s) => acc + s.precio, 0) || 0;
   const modo = proyecto.servicios?.[0]?.modo || "fijo";
   const proyectoTieneCarpeta = !!proyecto.folder_id;
+  const feedbacks = mensajesPortal.filter(m => m.tipo === "feedback");
+  const tareasAprobadas = tareas.filter(t => t.aprobada_cliente).length;
 
   function preguntarCarpetaExistente(nombre: string, carpetaExistenteId: string): Promise<"usar" | "nueva"> {
     return new Promise((resolve) => {
@@ -243,11 +280,9 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     await supabase.from("tareas").update({ completada: nuevaCompletada }).eq("id", id);
     const nuevasTareas = tareas.map((t) => t.id === id ? { ...t, completada: nuevaCompletada } : t);
     setTareas(nuevasTareas);
-    const total = nuevasTareas.length;
-    const completadasCount = nuevasTareas.filter((t) => t.completada).length;
     await supabase.from("proyectos").update({
-      tareas_total: total,
-      tareas_completadas: completadasCount,
+      tareas_total: nuevasTareas.length,
+      tareas_completadas: nuevasTareas.filter((t) => t.completada).length,
     }).eq("id", proyecto.id);
   }
 
@@ -331,12 +366,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     if (!nuevoTituloSubtarea.trim()) return;
     const tarea = tareas.find((t) => t.id === tareaId);
     if (!tarea) return;
-    const subtarea: Subtarea = {
-      id: Date.now(),
-      titulo: nuevoTituloSubtarea,
-      completada: false,
-      publica: nuevaSubtareaPublica,
-    };
+    const subtarea: Subtarea = { id: Date.now(), titulo: nuevoTituloSubtarea, completada: false, publica: nuevaSubtareaPublica };
     const nuevasSubtareas = [...tarea.subtareas, subtarea];
     await supabase.from("tareas").update({ subtareas: nuevasSubtareas }).eq("id", tareaId);
     setTareas(tareas.map((t) => t.id === tareaId ? { ...t, subtareas: nuevasSubtareas } : t));
@@ -348,9 +378,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   async function toggleSubtarea(tareaId: string, subtareaId: number) {
     const tarea = tareas.find((t) => t.id === tareaId);
     if (!tarea) return;
-    const nuevasSubtareas = tarea.subtareas.map((s) =>
-      s.id === subtareaId ? { ...s, completada: !s.completada } : s
-    );
+    const nuevasSubtareas = tarea.subtareas.map((s) => s.id === subtareaId ? { ...s, completada: !s.completada } : s);
     await supabase.from("tareas").update({ subtareas: nuevasSubtareas }).eq("id", tareaId);
     setTareas(tareas.map((t) => t.id === tareaId ? { ...t, subtareas: nuevasSubtareas } : t));
   }
@@ -365,11 +393,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
 
   async function agregarNotaProyecto() {
     if (!nuevaNotaProyecto.trim()) return;
-    const nota: Nota = {
-      id: Date.now(),
-      texto: nuevaNotaProyecto,
-      fecha: new Date().toISOString().split("T")[0],
-    };
+    const nota: Nota = { id: Date.now(), texto: nuevaNotaProyecto, fecha: new Date().toISOString().split("T")[0] };
     const nuevasNotas = [...notas, nota];
     await supabase.from("proyectos").update({ notas: nuevasNotas }).eq("id", proyecto.id);
     setNotas(nuevasNotas);
@@ -385,10 +409,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
 
   async function aceptarFinalizar() {
     const fecha = new Date().toISOString().split("T")[0];
-    await supabase.from("proyectos").update({
-      estado: "completado",
-      fecha_finalizacion: fecha,
-    }).eq("id", proyecto.id);
+    await supabase.from("proyectos").update({ estado: "completado", fecha_finalizacion: fecha }).eq("id", proyecto.id);
     setFinalizado(true);
     setFechaFinalizacion(fecha);
     setConfirmandoFinalizar(false);
@@ -400,24 +421,9 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     onVolver();
   }
 
-  function abrirWhatsApp() {
-    openUrl("https://wa.me/" + clienteWhatsapp);
-  }
-
-  function abrirCalendar() {
-    openUrl("https://calendar.google.com/calendar/r/eventedit?text=Reunion+con+" + proyecto.cliente_nombre);
-  }
-
-  // Estadísticas de actividad del cliente
-  const aprobaciones = mensajesPortal.filter(m => m.tipo === "aprobacion");
-  const feedbacks = mensajesPortal.filter(m => m.tipo === "feedback");
-  const mensajesGenerales = mensajesPortal.filter(m => !m.tipo);
-  const tareasAprobadas = tareas.filter(t => t.aprobada_cliente).length;
-
   return (
     <div className="p-8">
 
-      {/* Modal carpeta existente en tarea */}
       {modalCarpeta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6 w-full max-w-md mx-4">
@@ -471,10 +477,12 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={abrirWhatsApp} className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
+          <button onClick={() => openUrl("https://wa.me/" + clienteWhatsapp)}
+            className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
             WhatsApp
           </button>
-          <button onClick={abrirCalendar} className="bg-[#7C5CBF] text-white font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
+          <button onClick={() => openUrl("https://calendar.google.com/calendar/r/eventedit?text=Reunion+con+" + proyecto.cliente_nombre)}
+            className="bg-[#7C5CBF] text-white font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
             Agendar reunion
           </button>
           {!finalizado && (
@@ -511,14 +519,19 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           <p className="text-2xl font-bold text-white">{formatTiempo(totalSegundos)}</p>
         </div>
         <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
-          <p className="text-[#6B7280] text-xs mb-1">{modo === "fijo" ? "Tarifa real implicita" : "Total acumulado"}</p>
-          <p className="text-2xl font-bold text-[#1DB8A0]">
-            {modo === "fijo"
-              ? "$" + (totalHoras > 0 ? Math.round(presupuesto / totalHoras) : 0) + "/hr"
-              : "$" + Math.round(totalHoras * presupuesto)
-            }
-          </p>
-        </div>
+  <p className="text-[#6B7280] text-xs mb-1">{modo === "fijo" ? "Tarifa real implícita" : "Total acumulado"}</p>
+  <p className="text-2xl font-bold text-[#1DB8A0]">
+    {modo === "fijo"
+      ? totalHoras >= 1
+        ? "$" + Math.round(presupuesto / totalHoras) + "/hr"
+        : "—"
+      : "$" + Math.round(totalHoras * presupuesto)
+    }
+  </p>
+  {modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
+    <p className="text-[#6B7280] text-xs mt-1">Disponible desde 1h registrada</p>
+  )}
+</div>
       </div>
 
       <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-6">
@@ -625,7 +638,6 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           <div className="space-y-3">
             {tareas.map((tarea) => (
               <div key={tarea.id} className="border-b border-[#252B3B] last:border-0 pb-3 last:pb-0">
-
                 <div className="flex items-center gap-3">
                   <input type="checkbox" checked={tarea.completada} onChange={() => toggleTarea(tarea.id)}
                     disabled={finalizado} className="w-4 h-4 accent-[#1DB8A0] cursor-pointer flex-shrink-0" />
@@ -641,14 +653,10 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {tarea.aprobada_cliente && (
-                      <span className="text-[#1DB8A0] text-xs bg-[#1DB8A0]/10 px-2 py-0.5 rounded-full font-medium">
-                        ✓ Aprobada
-                      </span>
+                      <span className="text-[#1DB8A0] text-xs bg-[#1DB8A0]/10 px-2 py-0.5 rounded-full font-medium">✓ Aprobada</span>
                     )}
                     {tarea.folder_url && (
-                      <button onClick={() => openUrl(tarea.folder_url!)} className="text-[#1DB8A0] text-xs hover:underline">
-                        📁
-                      </button>
+                      <button onClick={() => openUrl(tarea.folder_url!)} className="text-[#1DB8A0] text-xs hover:underline">📁</button>
                     )}
                     {tarea.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
                     <span className={"text-xs px-2 py-0.5 rounded-full " + prioridadConfig[tarea.prioridad].color}>
@@ -672,23 +680,17 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                 {notaTareaId === tarea.id && (
                   <div className="mt-2 ml-7">
                     <textarea value={nuevaNota} onChange={(e) => setNuevaNota(e.target.value)}
-                      placeholder="Escribe una nota para esta tarea..."
-                      rows={2}
+                      placeholder="Escribe una nota para esta tarea..." rows={2}
                       className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#1DB8A0] resize-none mb-2" />
                     <div className="flex gap-2">
                       <button onClick={() => guardarNotaTarea(tarea.id, nuevaNota)}
-                        className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">
-                        Guardar
-                      </button>
+                        className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">Guardar</button>
                       <button onClick={() => { setNotaTareaId(null); setNuevaNota(""); }}
-                        className="text-[#6B7280] px-3 py-1 rounded-lg text-xs hover:text-white">
-                        Cancelar
-                      </button>
+                        className="text-[#6B7280] px-3 py-1 rounded-lg text-xs hover:text-white">Cancelar</button>
                     </div>
                   </div>
                 )}
 
-                {/* Subtareas */}
                 <div className="mt-2 ml-7">
                   {tarea.subtareas.length > 0 && (
                     <div className="space-y-1 mb-2">
@@ -698,15 +700,11 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                             onChange={() => toggleSubtarea(tarea.id, sub.id)}
                             disabled={finalizado}
                             className="w-3 h-3 accent-[#1DB8A0] cursor-pointer flex-shrink-0" />
-                          <p className={"text-xs flex-1 " + (sub.completada ? "line-through text-[#6B7280]" : "text-[#8B93A8]")}>
-                            {sub.titulo}
-                          </p>
+                          <p className={"text-xs flex-1 " + (sub.completada ? "line-through text-[#6B7280]" : "text-[#8B93A8]")}>{sub.titulo}</p>
                           {sub.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
                           {!finalizado && (
                             <button onClick={() => eliminarSubtarea(tarea.id, sub.id)}
-                              className="text-[#6B7280] text-xs hover:text-[#F47C5C] opacity-0 group-hover:opacity-100 transition-opacity">
-                              ✕
-                            </button>
+                              className="text-[#6B7280] text-xs hover:text-[#F47C5C] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                           )}
                         </div>
                       ))}
@@ -728,46 +726,40 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                           </label>
                           <div className="flex gap-2">
                             <button onClick={() => agregarSubtarea(tarea.id)}
-                              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">
-                              Guardar
-                            </button>
+                              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">Guardar</button>
                             <button onClick={() => { setSubtareaAbiertaId(null); setNuevoTituloSubtarea(""); setNuevaSubtareaPublica(false); }}
-                              className="text-[#6B7280] px-2 py-1 rounded-lg text-xs hover:text-white">
-                              Cancelar
-                            </button>
+                              className="text-[#6B7280] px-2 py-1 rounded-lg text-xs hover:text-white">Cancelar</button>
                           </div>
                         </div>
                       </div>
                     ) : (
                       <button onClick={() => setSubtareaAbiertaId(tarea.id)}
-                        className="text-[#6B7280] text-xs hover:text-[#1DB8A0] mt-1">
-                        + Subtarea
-                      </button>
+                        className="text-[#6B7280] text-xs hover:text-[#1DB8A0] mt-1">+ Subtarea</button>
                     )
                   )}
                 </div>
-
               </div>
             ))}
           </div>
         </div>
 
+        {/* Tiempo registrado — agrupado por tarea */}
         <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-medium">Tiempo registrado</h3>
             <span className="text-[#1DB8A0] text-sm font-medium">{formatTiempo(totalSegundos)} total</span>
           </div>
           <div className="space-y-2">
-            {registros.length === 0 && (
+            {registrosMostrados.length === 0 && (
               <p className="text-[#6B7280] text-sm">Sin registros de tiempo aún.</p>
             )}
-            {registros.map((registro) => (
+            {registrosMostrados.map((registro) => (
               <div key={registro.id} className="flex items-center justify-between py-2 border-b border-[#252B3B] last:border-0">
                 <div>
                   <p className="text-white text-sm">{registro.descripcion}</p>
-                  <p className="text-[#6B7280] text-xs mt-0.5">{registro.fecha}</p>
+                  <p className="text-[#6B7280] text-xs mt-0.5">Tiempo total acumulado</p>
                 </div>
-                <span className="text-[#1DB8A0] font-mono text-sm">{formatTiempo(registro.duracion)}</span>
+                <span className="text-[#1DB8A0] font-mono text-sm font-medium">{formatTiempo(registro.duracion)}</span>
               </div>
             ))}
           </div>
@@ -789,25 +781,18 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
         {mostrarFormNota && (
           <div className="mb-4">
             <textarea value={nuevaNotaProyecto} onChange={(e) => setNuevaNotaProyecto(e.target.value)}
-              placeholder="Escribe una nota sobre este proyecto..."
-              rows={3}
+              placeholder="Escribe una nota sobre este proyecto..." rows={3}
               className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0] resize-none mb-2" />
             <div className="flex gap-2">
               <button onClick={agregarNotaProyecto}
-                className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90">
-                Guardar nota
-              </button>
+                className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90">Guardar nota</button>
               <button onClick={() => setMostrarFormNota(false)}
-                className="text-[#6B7280] px-4 py-1.5 rounded-lg text-xs hover:text-white">
-                Cancelar
-              </button>
+                className="text-[#6B7280] px-4 py-1.5 rounded-lg text-xs hover:text-white">Cancelar</button>
             </div>
           </div>
         )}
 
-        {notas.length === 0 && !mostrarFormNota && (
-          <p className="text-[#6B7280] text-sm">Sin notas aun</p>
-        )}
+        {notas.length === 0 && !mostrarFormNota && <p className="text-[#6B7280] text-sm">Sin notas aun</p>}
 
         <div className="space-y-3">
           {notas.map((nota) => (
@@ -818,16 +803,13 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
               </div>
               {!finalizado && (
                 <button onClick={() => eliminarNotaProyecto(nota.id)}
-                  className="text-[#6B7280] text-xs hover:text-[#F47C5C] flex-shrink-0">
-                  Eliminar
-                </button>
+                  className="text-[#6B7280] text-xs hover:text-[#F47C5C] flex-shrink-0">Eliminar</button>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Actividad del cliente */}
       <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -856,7 +838,6 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
               const esCliente = msg.autor === "cliente";
               const esAprobacion = msg.tipo === "aprobacion";
               const esFeedback = msg.tipo === "feedback";
-
               return (
                 <div key={msg.id} className={"flex gap-3 " + (esCliente ? "" : "flex-row-reverse")}>
                   <div className={"flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold " +
@@ -878,21 +859,16 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           </div>
         )}
 
-        {/* Input para responder */}
         <div className="flex gap-2 pt-3 border-t border-[#252B3B]">
           <textarea
             value={respuesta}
             onChange={(e) => setRespuesta(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarRespuesta(); }
-            }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarRespuesta(); } }}
             placeholder="Responder al cliente desde el portal..."
             rows={2}
             className="flex-1 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#1DB8A0] resize-none"
           />
-          <button
-            onClick={enviarRespuesta}
-            disabled={!respuesta.trim() || enviandoRespuesta}
+          <button onClick={enviarRespuesta} disabled={!respuesta.trim() || enviandoRespuesta}
             className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-2 rounded-lg text-xs hover:opacity-90 disabled:opacity-50 self-end">
             {enviandoRespuesta ? "..." : "Enviar"}
           </button>

@@ -35,10 +35,10 @@ function App() {
       setUserId(data.session?.user?.id ?? null);
       setCargando(false);
       document.addEventListener("contextmenu", (e) => {
-  const target = e.target as HTMLElement;
-  const esTexto = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-  if (!esTexto) e.preventDefault();
-});
+        const target = e.target as HTMLElement;
+        const esTexto = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+        if (!esTexto) e.preventDefault();
+      });
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -82,7 +82,6 @@ function App() {
     };
   }, []);
 
-  // Verificar si el usuario necesita ver el tutorial
   useEffect(() => {
     if (!logueado || !userId) return;
     async function verificarTutorial() {
@@ -124,7 +123,9 @@ function App() {
           {activePage === "clientes" && <Clientes />}
           {activePage === "proyectos" && <Proyectos onGenerarFactura={(id) => { setProyectoFacturaId(id); setActivePage("facturas"); }} />}
           {activePage === "tareas" && <Tareas />}
-          {activePage === "timer" && <Timer />}
+          <div className={activePage === "timer" ? "block" : "hidden"}>
+            <Timer activo={activePage === "timer"} />
+          </div>
           {activePage === "facturas" && <Facturas proyectoPreseleccionado={proyectoFacturaId} onLimpiarProyecto={() => setProyectoFacturaId(null)} />}
           {activePage === "perfil" && (
             <Perfil
