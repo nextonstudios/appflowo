@@ -1,12 +1,19 @@
 import { useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { esFirmaReciente } from "../lib/firmaReciente";
+import type { ContratoClienteInfo } from "../lib/clientesContrato";
 import {
   isPermissionGranted,
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 
-export function useNotificaciones(userId: string | null) {
+const contratosNotificados = new Set<string>();
+
+export function useNotificaciones(
+  userId: string | null,
+  onContratoFirmado?: (c: ContratoClienteInfo) => void
+) {
   useEffect(() => {
     if (!userId) return;
 
@@ -105,9 +112,46 @@ export function useNotificaciones(userId: string | null) {
       )
       .subscribe();
 
+    const canalContratos = supabase
+      .channel("contratos_firmados_cliente")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "contratos",
+          filter: "estado=eq.firmado",
+        },
+        async (payload) => {
+          const nuevo = payload.new as Record<string, any>;
+          if (!nuevo || typeof nuevo.firma_cliente !== "string" || !nuevo.firma_cliente) return;
+          if (esFirmaReciente(nuevo.id)) return;
+          if (contratosNotificados.has(nuevo.id)) return;
+          contratosNotificados.add(nuevo.id);
+
+          const permiso = await isPermissionGranted();
+          if (permiso) {
+            sendNotification({
+              title: "Contrato firmado",
+              body: (nuevo.cliente_nombre || "El cliente") + " firmó el contrato " + (nuevo.numero || ""),
+            });
+          }
+
+          onContratoFirmado?.({
+            id: nuevo.id,
+            numero: nuevo.numero || "",
+            cliente_nombre: nuevo.cliente_nombre || "",
+            cliente_telefono: nuevo.cliente_telefono || null,
+            cliente_correo: nuevo.cliente_correo || null,
+          });
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(canalMensajes);
       supabase.removeChannel(canalTareas);
+      supabase.removeChannel(canalContratos);
     };
-  }, [userId]);
+  }, [userId, onContratoFirmado]);
 }

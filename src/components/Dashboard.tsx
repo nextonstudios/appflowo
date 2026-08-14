@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { formatearMoneda } from "../lib/moneda";
+import { useMoneda } from "../hooks/useMoneda";
 
 interface Proyecto {
   id: string;
@@ -41,10 +43,82 @@ function formatHoras(segundos: number) {
   return h + "h " + String(m).padStart(2, "0") + "m";
 }
 
+function formatearFechaHoy() {
+  const fecha = new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  return fecha.charAt(0).toUpperCase() + fecha.slice(1);
+}
+
+function ultimos7Dias() {
+  const nombres = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const hoy = new Date();
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(hoy);
+    d.setDate(hoy.getDate() - (6 - i));
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    return { key, label: nombres[d.getDay()], esHoy: i === 6 };
+  });
+}
+
+function etiquetaVencimiento(dias: number) {
+  if (dias < 0) return { color: "#F05C5C", texto: "Atrasada" };
+  if (dias === 0) return { color: "#F05C5C", texto: "Hoy" };
+  if (dias <= 2) return { color: "#F47C5C", texto: "En " + dias + " día" + (dias === 1 ? "" : "s") };
+  return { color: "#8B93A8", texto: "En " + dias + " días" };
+}
+
+const IconoIngresos = (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const IconoPorCobrar = (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const IconoHoras = (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 3h6M12 3v3m-4.5 5h9M6.75 8.25a7.5 7.5 0 1110.5 0L21 21H3l3.75-12.75z" />
+  </svg>
+);
+
+const IconoProyectos = (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
+
+function TarjetaKPI({ label, valor, caption, icono, iconoClase }: {
+  label: string;
+  valor: string;
+  caption: string;
+  icono: React.ReactNode;
+  iconoClase: string;
+}) {
+  return (
+    <div className="bg-canvas border border-edge rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted2">{label}</p>
+          <p className="text-xl xl:text-2xl font-semibold tracking-tight text-primary mt-2 truncate">{valor}</p>
+        </div>
+        <div className={"w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 " + iconoClase}>
+          {icono}
+        </div>
+      </div>
+      <p className="text-xs font-medium text-muted mt-3">{caption}</p>
+    </div>
+  );
+}
+
 function Dashboard() {
+  const moneda = useMoneda();
   const [filtro, setFiltro] = useState("mes");
   const [vista, setVista] = useState<"lista" | "tarjetas">("lista");
   const [cargando, setCargando] = useState(true);
+  const primeraCarga = useRef(true);
   const [nombre, setNombre] = useState("Freelancer");
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [tareasUrgentes, setTareasUrgentes] = useState<TareaUrgente[]>([]);
@@ -53,13 +127,14 @@ function Dashboard() {
   const [facturasPendientes, setFacturasPendientes] = useState(0);
   const [facturasCobradas, setFacturasCobradas] = useState(0);
   const [horasMes, setHorasMes] = useState(0);
+  const [horasPorDia, setHorasPorDia] = useState<number[]>([]);
 
   useEffect(() => {
     cargarDatos();
   }, [filtro]);
 
   async function cargarDatos() {
-    setCargando(true);
+    if (primeraCarga.current) setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -145,174 +220,244 @@ function Dashboard() {
       .reduce((acc: number, r: any) => acc + r.duracion, 0);
     setHorasMes(horasEsteMes);
 
+    const horasPorKey: Record<string, number> = {};
+    (registrosData || []).forEach((r: any) => {
+      const key = (r.fecha || "").slice(0, 10);
+      if (key) horasPorKey[key] = (horasPorKey[key] || 0) + (r.duracion || 0);
+    });
+    const horas7 = ultimos7Dias().map((d) => horasPorKey[d.key] || 0);
+    setHorasPorDia(horas7);
+
+    primeraCarga.current = false;
     setCargando(false);
   }
 
   const porIniciar = proyectos.filter((p) => p.tareas_completadas === 0 && p.estado !== "completado");
   const enProceso = proyectos.filter((p) => p.tareas_completadas > 0 && p.tareas_completadas < p.tareas && p.estado !== "completado");
   const finalizados = proyectos.filter((p) => p.estado === "completado");
-  const urgentes = proyectos.filter((p) => getDiasRestantes(p.deadline) <= 3 && getDiasRestantes(p.deadline) >= 0 && p.estado !== "completado");
+  const proyectosActivos = proyectos.filter((p) => p.estado !== "completado").length;
+
+  const vencimientos = [
+    ...proyectos
+      .filter((p) => p.estado !== "completado" && p.deadline)
+      .map((p) => ({ id: "p" + p.id, titulo: p.nombre, sub: p.cliente_nombre, tipo: "Proyecto", dias: getDiasRestantes(p.deadline) })),
+    ...tareasUrgentes
+      .filter((t) => t.deadline)
+      .map((t) => ({ id: "t" + t.id, titulo: t.titulo, sub: t.proyecto_nombre, tipo: "Tarea", dias: getDiasRestantes(t.deadline) })),
+  ].sort((a, b) => a.dias - b.dias).slice(0, 6);
+
+  const maxHoras = Math.max(1, ...horasPorDia);
+  const hayHoras = horasPorDia.some((h) => h > 0);
+  const diasSemana = ultimos7Dias();
 
   if (cargando) {
-    return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando dashboard...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">Cargando dashboard...</p></div>;
   }
 
   return (
-    <div className="p-8">
-
+    <div className="p-6 xl:p-8">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-white">{getSaludo(nombre)} 👋</h2>
-        <p className="text-[#6B7280] mt-1">Aqui esta el resumen de tu negocio</p>
+        <h1 className="text-[26px] font-semibold tracking-tight text-primary">{getSaludo(nombre)}</h1>
+        <p className="text-sm font-medium text-muted mt-1">{formatearFechaHoy()}</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-2">
-        <div className="bg-[#141824] rounded-xl p-5 border border-[#252B3B]">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[#6B7280] text-sm">Ingresos cobrados</p>
-            <div className="flex gap-1">
-              {["dia", "semana", "mes", "año"].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFiltro(f)}
-                  className={"text-xs px-2 py-0.5 rounded " + (filtro === f ? "bg-[#1DB8A0] text-[#1A1F2E] font-medium" : "text-[#6B7280] hover:text-white")}
-                >
-                  {f === "dia" ? "1D" : f === "semana" ? "7D" : f === "mes" ? "1M" : "1A"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="text-3xl font-bold text-white">${ingresosCobrados.toLocaleString()}</p>
-          <p className="text-[#1DB8A0] text-xs mt-1">{facturasCobradas} facturas cobradas</p>
-        </div>
-        <div className="bg-[#141824] rounded-xl p-5 border border-[#252B3B]">
-          <p className="text-[#6B7280] text-sm mb-3">Por cobrar</p>
-          <p className="text-3xl font-bold text-white">${porCobrar.toLocaleString()}</p>
-          <p className="text-[#F47C5C] text-xs mt-1">{facturasPendientes} facturas pendientes</p>
-        </div>
-        <div className="bg-[#141824] rounded-xl p-5 border border-[#252B3B]">
-          <p className="text-[#6B7280] text-sm mb-3">Horas este mes</p>
-          <p className="text-3xl font-bold text-white">{formatHoras(horasMes)}</p>
-          <p className="text-[#7C5CBF] text-xs mt-1">{proyectos.filter((p) => p.estado !== "completado").length} proyectos activos</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-primary">Resumen del período</h2>
+        <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
+          {["dia", "semana", "mes", "año"].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " +
+                (filtro === f ? "bg-accent text-onaccent" : "text-muted hover:text-primary")}
+            >
+              {f === "dia" ? "1D" : f === "semana" ? "7D" : f === "mes" ? "1M" : "1A"}
+            </button>
+          ))}
         </div>
       </div>
 
-      {(urgentes.length > 0 || tareasUrgentes.length > 0) && (
-        <div className="bg-[#F47C5C]/10 border border-[#F47C5C]/30 rounded-xl p-5 mb-6 mt-6">
-          <h3 className="text-[#F47C5C] font-medium mb-3">Urgente — vence en 3 dias o menos</h3>
-          <div className="space-y-2">
-            {urgentes.map((p) => (
-              <div key={p.id} className="flex items-center justify-between">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <TarjetaKPI
+          label="Ingresos cobrados"
+          valor={formatearMoneda(ingresosCobrados, moneda)}
+          caption={facturasCobradas + " comprobante" + (facturasCobradas === 1 ? "" : "s") + " cobrado" + (facturasCobradas === 1 ? "" : "s")}
+          icono={IconoIngresos}
+          iconoClase="bg-accent/10 border-accent/20 text-accent"
+        />
+        <TarjetaKPI
+          label="Por cobrar"
+          valor={formatearMoneda(porCobrar, moneda)}
+          caption={facturasPendientes + " comprobante" + (facturasPendientes === 1 ? "" : "s") + " pendiente" + (facturasPendientes === 1 ? "" : "s")}
+          icono={IconoPorCobrar}
+          iconoClase="bg-coral/10 border-coral/20 text-coral"
+        />
+        <TarjetaKPI
+          label="Horas registradas"
+          valor={formatHoras(horasMes)}
+          caption="en lo que va del mes"
+          icono={IconoHoras}
+          iconoClase="bg-violet/10 border-violet/20 text-violet"
+        />
+        <TarjetaKPI
+          label="Proyectos activos"
+          valor={String(proyectosActivos)}
+          caption={enProceso.length + " en proceso · " + porIniciar.length + " por iniciar"}
+          icono={IconoProyectos}
+          iconoClase="bg-[#5B8DEF]/10 border-[#5B8DEF]/20 text-[#5B8DEF]"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-8">
+        <div className="xl:col-span-2 bg-canvas border border-edge rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-primary">Próximos vencimientos</h3>
+          <p className="text-xs font-medium text-muted mt-0.5 mb-4">Proyectos y tareas por entregar</p>
+          {vencimientos.length === 0 ? (
+            <p className="text-sm text-muted py-6 text-center">Nada urgente por ahora. Todo bajo control. ✨</p>
+          ) : (
+            <div className="space-y-1">
+              {vencimientos.map((v) => {
+                const etiqueta = etiquetaVencimiento(v.dias);
+                return (
+                  <div key={v.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-surface transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: etiqueta.color }} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-primary truncate">{v.titulo}</p>
+                        <p className="text-xs text-muted truncate">{v.sub} · {v.tipo}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-medium flex-shrink-0" style={{ color: etiqueta.color }}>{etiqueta.texto}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-canvas border border-edge rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-primary">Horas por día</h3>
+          <p className="text-xs font-medium text-muted mt-0.5 mb-4">Últimos 7 días</p>
+          {!hayHoras ? (
+            <p className="text-sm text-muted py-6 text-center">Sin registros esta semana.</p>
+          ) : (
+            <div className="h-32 flex items-end gap-2">
+              {diasSemana.map((d, i) => {
+                const horas = horasPorDia[i];
+                const alto = Math.max(6, Math.round((horas / maxHoras) * 84));
+                return (
+                  <div key={d.key} className="flex-1 flex flex-col items-center justify-end gap-1.5 h-full">
+                    {horas > 0 && <span className="text-[10px] font-medium text-muted2">{Math.round(horas / 60)}h</span>}
+                    <div
+                      className={"w-full rounded-md " + (d.esHoy ? "bg-accent" : "bg-accent/25")}
+                      style={{ height: horas > 0 ? alto : 6 }}
+                    />
+                    <span className={"text-[10px] " + (d.esHoy ? "text-accent font-semibold" : "text-muted2")}>{d.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-primary">Proyectos</h2>
+        <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
+          <button
+            onClick={() => setVista("lista")}
+            className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
+              (vista === "lista" ? "bg-surface text-primary" : "text-muted hover:text-primary")}
+          >
+            Lista
+          </button>
+          <button
+            onClick={() => setVista("tarjetas")}
+            className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
+              (vista === "tarjetas" ? "bg-surface text-primary" : "text-muted hover:text-primary")}
+          >
+            Tarjetas
+          </button>
+        </div>
+      </div>
+
+      <div className={vista === "tarjetas" ? "grid grid-cols-1 xl:grid-cols-2 gap-4" : "space-y-4"}>
+
+        {porIniciar.length > 0 && (
+          <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
+            <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-gray"></div>
+              <h3 className="text-primary font-medium text-sm">Por iniciar</h3>
+              <span className="text-muted text-xs ml-1">{porIniciar.length}</span>
+            </div>
+            {porIniciar.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-5 py-3 border-b border-edge last:border-0 hover:bg-surface transition-colors">
                 <div>
-                  <p className="text-white text-sm">{p.nombre}</p>
-                  <p className="text-[#6B7280] text-xs">{p.cliente_nombre} · Proyecto</p>
+                  <p className="text-primary text-sm font-medium">{p.nombre}</p>
+                  <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
                 </div>
-                <span className="text-[#F47C5C] text-xs font-medium">
-                  {getDiasRestantes(p.deadline) === 0 ? "Hoy" : getDiasRestantes(p.deadline) + " dias"}
-                </span>
-              </div>
-            ))}
-            {tareasUrgentes.map((t) => (
-              <div key={t.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-white text-sm">{t.titulo}</p>
-                  <p className="text-[#6B7280] text-xs">{t.proyecto_nombre} · Tarea</p>
-                </div>
-                <span className="text-[#F47C5C] text-xs font-medium">
-                  {getDiasRestantes(t.deadline) === 0 ? "Hoy" : getDiasRestantes(t.deadline) + " dias"}
-                </span>
+                <p className="text-muted text-xs">Entrega: {p.deadline}</p>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-medium">Proyectos</h3>
-          <div className="flex gap-1 bg-[#141824] border border-[#252B3B] rounded-lg p-1">
-            <button
-              onClick={() => setVista("lista")}
-              className={"text-xs px-3 py-1.5 rounded-md transition-colors " + (vista === "lista" ? "bg-[#1A1F2E] text-white" : "text-[#6B7280] hover:text-white")}
-            >
-              Lista
-            </button>
-            <button
-              onClick={() => setVista("tarjetas")}
-              className={"text-xs px-3 py-1.5 rounded-md transition-colors " + (vista === "tarjetas" ? "bg-[#1A1F2E] text-white" : "text-[#6B7280] hover:text-white")}
-            >
-              Tarjetas
-            </button>
+        {enProceso.length > 0 && (
+          <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
+            <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-accent"></div>
+              <h3 className="text-primary font-medium text-sm">En proceso</h3>
+              <span className="text-muted text-xs ml-1">{enProceso.length}</span>
+            </div>
+            {enProceso.map((p) => {
+              const pct = p.tareas > 0 ? Math.round((p.tareas_completadas / p.tareas) * 100) : 0;
+              return (
+                <div key={p.id} className="px-5 py-3 border-b border-edge last:border-0 hover:bg-surface transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-primary text-sm font-medium">{p.nombre}</p>
+                      <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-muted text-xs">Entrega: {p.deadline}</p>
+                      <p className="text-accent text-xs mt-0.5">{p.tareas_completadas}/{p.tareas} tareas · {pct}%</p>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 h-1 rounded-full bg-surface overflow-hidden">
+                    <div className="h-full rounded-full bg-accent transition-all" style={{ width: pct + "%" }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-        <div className={vista === "tarjetas" ? "grid grid-cols-2 gap-4" : "space-y-4"}>
+        )}
 
-          {porIniciar.length > 0 && (
-            <div className="bg-[#141824] rounded-xl border border-[#252B3B]">
-              <div className="px-5 py-3 border-b border-[#252B3B] flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#6B7280]"></div>
-                <h3 className="text-white font-medium text-sm">Por iniciar</h3>
-                <span className="text-[#6B7280] text-xs ml-1">{porIniciar.length}</span>
-              </div>
-              {porIniciar.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-5 py-3 border-b border-[#252B3B] last:border-0 hover:bg-[#1A1F2E] transition-colors cursor-pointer">
-                  <div>
-                    <p className="text-white text-sm">{p.nombre}</p>
-                    <p className="text-[#6B7280] text-xs mt-0.5">{p.cliente_nombre}</p>
-                  </div>
-                  <p className="text-[#6B7280] text-xs">Entrega: {p.deadline}</p>
+        {finalizados.length > 0 && (
+          <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
+            <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-violet"></div>
+              <h3 className="text-primary font-medium text-sm">Finalizados</h3>
+              <span className="text-muted text-xs ml-1">{finalizados.length}</span>
+            </div>
+            {finalizados.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-5 py-3 border-b border-edge last:border-0 hover:bg-surface transition-colors">
+                <div>
+                  <p className="text-primary text-sm font-medium">{p.nombre}</p>
+                  <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {enProceso.length > 0 && (
-            <div className="bg-[#141824] rounded-xl border border-[#252B3B]">
-              <div className="px-5 py-3 border-b border-[#252B3B] flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#1DB8A0]"></div>
-                <h3 className="text-white font-medium text-sm">En proceso</h3>
-                <span className="text-[#6B7280] text-xs ml-1">{enProceso.length}</span>
+                <p className="text-violet text-xs font-medium">Completado</p>
               </div>
-              {enProceso.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-5 py-3 border-b border-[#252B3B] last:border-0 hover:bg-[#1A1F2E] transition-colors cursor-pointer">
-                  <div>
-                    <p className="text-white text-sm">{p.nombre}</p>
-                    <p className="text-[#6B7280] text-xs mt-0.5">{p.cliente_nombre}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[#6B7280] text-xs">Entrega: {p.deadline}</p>
-                    <p className="text-[#1DB8A0] text-xs mt-0.5">{p.tareas_completadas}/{p.tareas} tareas</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+            ))}
+          </div>
+        )}
 
-          {finalizados.length > 0 && (
-            <div className="bg-[#141824] rounded-xl border border-[#252B3B]">
-              <div className="px-5 py-3 border-b border-[#252B3B] flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#7C5CBF]"></div>
-                <h3 className="text-white font-medium text-sm">Finalizados</h3>
-                <span className="text-[#6B7280] text-xs ml-1">{finalizados.length}</span>
-              </div>
-              {finalizados.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-5 py-3 border-b border-[#252B3B] last:border-0 hover:bg-[#1A1F2E] transition-colors cursor-pointer">
-                  <div>
-                    <p className="text-white text-sm">{p.nombre}</p>
-                    <p className="text-[#6B7280] text-xs mt-0.5">{p.cliente_nombre}</p>
-                  </div>
-                  <p className="text-[#7C5CBF] text-xs">Completado</p>
-                </div>
-              ))}
-            </div>
-          )}
+        {proyectos.length === 0 && (
+          <div className="text-center py-14 bg-canvas rounded-2xl border border-edge">
+            <p className="text-muted text-sm">No tienes proyectos todavía.</p>
+            <p className="text-muted text-xs mt-1">Crea tu primer proyecto desde la sección Proyectos.</p>
+          </div>
+        )}
 
-          {proyectos.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-[#6B7280]">No tienes proyectos todavía.</p>
-            </div>
-          )}
-
-        </div>
       </div>
     </div>
   );

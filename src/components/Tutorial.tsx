@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { marcarNovedadesVista } from "./Novedades";
 
 const TUTORIAL_VERSION = 1;
 
@@ -22,7 +23,7 @@ const pasos: Paso[] = [
     color: "#1DB8A0",
     descripcion: [
       "El lugar donde tu negocio freelance por fin funciona como debe.",
-      "Clientes, proyectos, tiempo, facturas y tu portal profesional — todo conectado en un solo flujo.",
+      "Clientes, proyectos, tiempo, comprobantes y tu portal profesional — todo conectado en un solo flujo.",
       "Esta guía te lleva por lo esencial en menos de 2 minutos. ¡Vamos allá!",
     ],
   },
@@ -34,7 +35,7 @@ const pasos: Paso[] = [
     color: "#7C5CBF",
     descripcion: [
       "Ve a Perfil y completa tu información: nombre, WhatsApp con indicador de país sin el +, y tu marca personal.",
-      "Sube tu logotipo — aparece automáticamente en todas tus facturas PDF.",
+      "Sube tu logotipo — aparece automáticamente en todos tus comprobantes PDF.",
       "Conecta tu Google Drive para crear carpetas de clientes y proyectos sin salir de la app.",
       "Crea tu catálogo de servicios con tus tarifas base. Se autocompletan al crear un proyecto.",
     ],
@@ -48,8 +49,35 @@ const pasos: Paso[] = [
     color: "#1DB8A0",
     descripcion: [
       "Agrega clientes con el botón Nueva cliente. Registra su WhatsApp con indicador de país sin el + y su correo.",
-      "Desde el perfil de cada cliente puedes enviarle un WhatsApp directo, compartir su portal personalizado, agendar una reunión en Google Meet o agregar notas privadas.",
+      "Desde el perfil de cada cliente puedes enviarle un WhatsApp directo, compartir su portal personalizado (avance del proyecto, tareas, pagos y mensajes), agendar una reunión en Google Meet o agregar notas privadas.",
       "Si tienes Google Drive conectado, puedes vincular o crear su carpeta en la nube desde aquí.",
+    ],
+  },
+  {
+    id: "cotizaciones",
+    tipo: "spotlight",
+    sidebarItem: "cotizaciones",
+    titulo: "Cotizaciones profesionales",
+    emoji: "📄",
+    color: "#F47C5C",
+    descripcion: [
+      "Crea una cotización en minutos: elige servicios de tu catálogo, ajusta precios, validez y tus políticas.",
+      "Envíala a tu cliente por WhatsApp o correo; él la ve y la responde desde su portal.",
+      "Al aprobarla, puedes generar la factura o el contrato con un clic.",
+    ],
+  },
+  {
+    id: "contratos",
+    tipo: "spotlight",
+    sidebarItem: "contratos",
+    titulo: "Firma de contratos en línea",
+    emoji: "✍️",
+    color: "#7C5CBF",
+    descripcion: [
+      "Crea un contrato y envía a tu cliente un enlace corto por WhatsApp o correo.",
+      "Tu cliente lo firma escribiendo su nombre (o dibujando su firma) desde el navegador, sin instalar nada.",
+      "Recibes una notificación al instante y el contrato queda con firma y fecha reales, listo para descargar en PDF.",
+      "Si el cliente aún no tiene cuenta, Flowo la crea automáticamente al firmar.",
     ],
   },
   {
@@ -95,12 +123,12 @@ const pasos: Paso[] = [
     id: "facturas",
     tipo: "spotlight",
     sidebarItem: "facturas",
-    titulo: "Facturas que se hacen solas",
+    titulo: "Comprobantes que se hacen solos",
     emoji: "🧾",
     color: "#F47C5C",
     descripcion: [
-      "Olvídate de armar facturas manualmente. Todo lo que registres en Flowo se agrega automáticamente.",
-      "Selecciona el proyecto y la factura se llena sola con los conceptos, horas y tareas realizadas.",
+      "Olvídate de armar comprobantes manualmente. Todo lo que registres en Flowo se agrega automáticamente.",
+      "Selecciona el proyecto y el comprobante se llena solo con los conceptos, horas y tareas realizadas.",
       "Descárgala en PDF con tu logo, envíala por email o WhatsApp, y registra abonos o pagos completos.",
     ],
   },
@@ -114,7 +142,7 @@ const pasos: Paso[] = [
     descripcion: [
       "El Dashboard es tu punto de partida diario. Tareas completadas, en proceso y las más urgentes.",
       "Un resumen ejecutivo de todo lo que está pasando en tu negocio freelance — sin abrir nada más.",
-      "Flowo está listo. Ahora es tu turno. ¡A facturar!",
+      "Flowo está listo. Ahora es tu turno. ¡A generar comprobantes!",
     ],
   },
 ];
@@ -160,6 +188,7 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
         { onConflict: "user_id" }
       );
     }
+    marcarNovedadesVista();
     setVisible(false);
     setTimeout(onTerminar, 300);
   }
@@ -209,7 +238,7 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
             : { top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 480, zIndex: 52 }
         }
       >
-        <div className="bg-[#141824] border border-[#252B3B] rounded-2xl p-8 shadow-2xl">
+        <div className="bg-canvas border border-edge rounded-2xl p-8 shadow-2xl">
 
           {/* Progreso */}
           <div className="flex gap-1.5 mb-6">
@@ -230,7 +259,7 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
             >
               {pasoActual.emoji}
             </div>
-            <h2 className="text-white text-xl font-bold mb-1">{pasoActual.titulo}</h2>
+            <h2 className="text-primary text-xl font-bold mb-1">{pasoActual.titulo}</h2>
             <div
               className="h-0.5 w-10 rounded-full mb-4"
               style={{ backgroundColor: pasoActual.color }}
@@ -245,7 +274,7 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
                   style={{ backgroundColor: pasoActual.color + "20", color: pasoActual.color }}>
                   {i + 1}
                 </span>
-                <p className="text-[#9CA3AF] text-sm leading-relaxed">{linea}</p>
+                <p className="text-muted2 text-sm leading-relaxed">{linea}</p>
               </div>
             ))}
           </div>
@@ -256,14 +285,14 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
               {paso > 0 && (
                 <button
                   onClick={anterior}
-                  className="text-[#6B7280] text-sm hover:text-white transition-colors"
+                  className="text-muted text-sm hover:text-primary transition-colors"
                 >
                   ← Anterior
                 </button>
               )}
               <button
                 onClick={terminar}
-                className="text-[#6B7280] text-xs hover:text-white transition-colors"
+                className="text-muted text-xs hover:text-primary transition-colors"
               >
                 Saltar guía
               </button>
@@ -278,7 +307,7 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
           </div>
 
           {/* Contador */}
-          <p className="text-center text-[#6B7280] text-xs mt-4">
+          <p className="text-center text-muted text-xs mt-4">
             {paso + 1} de {pasos.length}
           </p>
 

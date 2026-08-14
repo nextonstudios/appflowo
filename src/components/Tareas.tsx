@@ -1,37 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import Select, { type SelectOption } from "./Select";
+import TareaItem, { prioridadConfig, type Nota, type Subtarea, type Tarea } from "./TareaItem";
 
-interface Nota {
-  id: number;
-  texto: string;
-  fecha: string;
-}
-
-interface Subtarea {
-  id: number;
-  titulo: string;
-  completada: boolean;
-  publica: boolean;
-}
-
-interface Tarea {
-  id: string;
-  titulo: string;
+type TareaTab = Tarea & {
   proyecto_id: string;
   proyecto_nombre: string;
-  prioridad: "alta" | "media" | "baja";
-  estado: "pendiente" | "en-progreso" | "completada";
-  completada: boolean;
-  publica: boolean;
-  deadline: string;
-  notas: Nota[];
-  subtareas: Subtarea[];
-  folder_id?: string;
-  folder_url?: string;
-  aprobada_cliente: boolean;
-}
+};
 
 interface ProyectoOpcion {
   id: string;
@@ -40,319 +16,34 @@ interface ProyectoOpcion {
   folder_url?: string;
 }
 
-const prioridadConfig = {
-  "alta": { label: "Alta", color: "text-[#F47C5C] bg-[#F47C5C]/10" },
-  "media": { label: "Media", color: "text-[#7C5CBF] bg-[#7C5CBF]/10" },
-  "baja": { label: "Baja", color: "text-[#6B7280] bg-[#6B7280]/10" },
-};
-
-const estadoConfig = {
-  "pendiente": { label: "Pendiente", color: "text-[#6B7280] bg-[#6B7280]/10" },
-  "en-progreso": { label: "En progreso", color: "text-[#7C5CBF] bg-[#7C5CBF]/10" },
-  "completada": { label: "Completada", color: "text-[#1DB8A0] bg-[#1DB8A0]/10" },
-};
-
-function getDiasRestantes(deadline: string) {
-  if (!deadline) return 999;
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const fecha = new Date(deadline);
-  fecha.setHours(0, 0, 0, 0);
-  return Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function NotaItem({ nota, tareaId, onEditar, onEliminar }: {
-  nota: Nota;
-  tareaId: string;
-  onEditar: (tareaId: string, notaId: number, texto: string) => void;
-  onEliminar: (tareaId: string, notaId: number) => void;
-}) {
-  const [editando, setEditando] = useState(false);
-  const [textoEdit, setTextoEdit] = useState(nota.texto);
-
-  async function guardarEdicion() {
-    if (!textoEdit.trim()) return;
-    await onEditar(tareaId, nota.id, textoEdit);
-    setEditando(false);
-  }
-
-  return (
-    <div className="bg-[#1A1F2E] rounded-lg px-3 py-2">
-      {editando ? (
-        <div>
-          <textarea value={textoEdit} onChange={(e) => setTextoEdit(e.target.value)} rows={2}
-            className="w-full bg-[#141824] border border-[#1DB8A0] rounded-lg px-3 py-2 text-white text-xs focus:outline-none resize-none mb-2" />
-          <div className="flex gap-2">
-            <button onClick={guardarEdicion}
-              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">
-              Guardar
-            </button>
-            <button onClick={() => { setEditando(false); setTextoEdit(nota.texto); }}
-              className="text-[#6B7280] px-3 py-1 rounded-lg text-xs hover:text-white">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-white text-xs">{nota.texto}</p>
-            <p className="text-[#6B7280] text-xs mt-0.5">{nota.fecha}</p>
-          </div>
-          <div className="flex gap-2 flex-shrink-0">
-            <button onClick={() => setEditando(true)} className="text-[#6B7280] text-xs hover:text-[#1DB8A0]">Editar</button>
-            <button onClick={() => onEliminar(tareaId, nota.id)} className="text-[#6B7280] text-xs hover:text-[#F47C5C]">Eliminar</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TareaItem({ tarea, notaTareaId, nuevaNota, editandoTareaId, editTitulo, editPrioridad, editDeadline, editPublica,
-  subtareaAbiertaId, nuevoTituloSubtarea, nuevaSubtareaPublica,
-  setNotaTareaId, setNuevaNota, setEditandoTareaId, setEditTitulo, setEditPrioridad, setEditDeadline, setEditPublica,
-  setSubtareaAbiertaId, setNuevoTituloSubtarea, setNuevaSubtareaPublica,
-  onCambiarEstado, onAgregarNota, onEditarNota, onEliminarNota, onEliminarTarea, onGuardarEdicion, onAbrirEdicion,
-  onAgregarSubtarea, onToggleSubtarea, onEliminarSubtarea,
-}: {
-  tarea: Tarea;
-  notaTareaId: string | null;
-  nuevaNota: string;
-  editandoTareaId: string | null;
-  editTitulo: string;
-  editPrioridad: "alta" | "media" | "baja";
-  editDeadline: string;
-  editPublica: boolean;
-  subtareaAbiertaId: string | null;
-  nuevoTituloSubtarea: string;
-  nuevaSubtareaPublica: boolean;
-  setNotaTareaId: (id: string | null) => void;
-  setNuevaNota: (v: string) => void;
-  setEditandoTareaId: (id: string | null) => void;
-  setEditTitulo: (v: string) => void;
-  setEditPrioridad: (v: "alta" | "media" | "baja") => void;
-  setEditDeadline: (v: string) => void;
-  setEditPublica: (v: boolean) => void;
-  setSubtareaAbiertaId: (id: string | null) => void;
-  setNuevoTituloSubtarea: (v: string) => void;
-  setNuevaSubtareaPublica: (v: boolean) => void;
-  onCambiarEstado: (id: string, estado: "pendiente" | "en-progreso" | "completada") => void;
-  onAgregarNota: (id: string) => void;
-  onEditarNota: (tareaId: string, notaId: number, texto: string) => void;
-  onEliminarNota: (tareaId: string, notaId: number) => void;
-  onEliminarTarea: (id: string) => void;
-  onGuardarEdicion: (id: string) => void;
-  onAbrirEdicion: (tarea: Tarea) => void;
-  onAgregarSubtarea: (tareaId: string) => void;
-  onToggleSubtarea: (tareaId: string, subtareaId: number) => void;
-  onEliminarSubtarea: (tareaId: string, subtareaId: number) => void;
-}) {
-  const diasRestantes = getDiasRestantes(tarea.deadline);
-  const estaEditando = editandoTareaId === tarea.id;
-
-  return (
-    <div className="bg-[#141824] border border-[#252B3B] rounded-xl px-5 py-4">
-      {estaEditando ? (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Titulo</label>
-              <input value={editTitulo} onChange={(e) => setEditTitulo(e.target.value)}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
-            </div>
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Prioridad</label>
-              <select value={editPrioridad} onChange={(e) => setEditPrioridad(e.target.value as "alta" | "media" | "baja")}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
-                <option value="alta">Alta</option>
-                <option value="media">Media</option>
-                <option value="baja">Baja</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Fecha limite</label>
-              <input value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)} type="date"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
-            </div>
-            <div className="flex items-center gap-2 mt-5">
-              <input type="checkbox" checked={editPublica} onChange={(e) => setEditPublica(e.target.checked)} className="w-4 h-4 accent-[#1DB8A0]" />
-              <label className="text-[#6B7280] text-xs">Visible para el cliente</label>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => onGuardarEdicion(tarea.id)}
-              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90">
-              Guardar cambios
-            </button>
-            <button onClick={() => setEditandoTareaId(null)}
-              className="text-[#6B7280] px-4 py-1.5 rounded-lg text-xs hover:text-white">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="flex-1">
-              <p className={"text-sm font-medium " + (tarea.estado === "completada" ? "line-through text-[#6B7280]" : "text-white")}>
-                {tarea.titulo}
-              </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-[#6B7280] text-xs">{tarea.proyecto_nombre}</p>
-                {tarea.subtareas.length > 0 && (
-                  <span className="text-[#6B7280] text-xs">
-                    · {tarea.subtareas.filter((s) => s.completada).length}/{tarea.subtareas.length} subtareas
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {tarea.aprobada_cliente && (
-                <span className="text-[#1DB8A0] text-xs bg-[#1DB8A0]/10 px-2 py-0.5 rounded-full font-medium">
-                  ✓ Aprobada
-                </span>
-              )}
-              {tarea.folder_url && (
-                <button onClick={() => openUrl(tarea.folder_url!)}
-                  className="text-[#1DB8A0] text-xs hover:underline" title="Abrir carpeta en Drive">
-                  📁
-                </button>
-              )}
-              {tarea.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
-              <span className={"text-xs px-2 py-0.5 rounded-full " + prioridadConfig[tarea.prioridad].color}>
-                {prioridadConfig[tarea.prioridad].label}
-              </span>
-              <button onClick={() => onAbrirEdicion(tarea)} className="text-[#6B7280] text-xs hover:text-[#1DB8A0]">Editar</button>
-              <button onClick={() => onEliminarTarea(tarea.id)} className="text-[#6B7280] text-xs hover:text-[#F47C5C]">✕</button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <select value={tarea.estado}
-                onChange={(e) => onCambiarEstado(tarea.id, e.target.value as "pendiente" | "en-progreso" | "completada")}
-                className={"text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none " + estadoConfig[tarea.estado].color}>
-                <option value="pendiente">Pendiente</option>
-                <option value="en-progreso">En progreso</option>
-                <option value="completada">Completada</option>
-              </select>
-              {tarea.deadline && (
-                <span className={"text-xs " + (diasRestantes <= 3 && tarea.estado !== "completada" ? "text-[#F47C5C]" : "text-[#6B7280]")}>
-                  {diasRestantes === 0 ? "Vence hoy" : diasRestantes < 0 ? "Vencida hace " + Math.abs(diasRestantes) + " dias" : "Vence en " + diasRestantes + " dias"}
-                </span>
-              )}
-            </div>
-            <button onClick={() => setNotaTareaId(notaTareaId === tarea.id ? null : tarea.id)}
-              className="text-[#6B7280] text-xs hover:text-[#1DB8A0]">
-              {tarea.notas.length > 0 ? tarea.notas.length + " nota" + (tarea.notas.length > 1 ? "s" : "") : "+ Nota"}
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Notas */}
-      {!estaEditando && notaTareaId === tarea.id && (
-        <div className="mt-3 border-t border-[#252B3B] pt-3">
-          <div className="space-y-2 mb-3">
-            {tarea.notas.map((nota) => (
-              <NotaItem key={nota.id} nota={nota} tareaId={tarea.id} onEditar={onEditarNota} onEliminar={onEliminarNota} />
-            ))}
-          </div>
-          <textarea value={nuevaNota} onChange={(e) => setNuevaNota(e.target.value)}
-            placeholder="Escribe una nota..." rows={2}
-            className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#1DB8A0] resize-none mb-2" />
-          <div className="flex gap-2">
-            <button onClick={() => onAgregarNota(tarea.id)}
-              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
-              Guardar
-            </button>
-            <button onClick={() => { setNotaTareaId(null); setNuevaNota(""); }}
-              className="text-[#6B7280] px-3 py-1.5 rounded-lg text-xs hover:text-white">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Subtareas */}
-      {!estaEditando && (
-        <div className="mt-2 ml-1">
-          {tarea.subtareas.length > 0 && (
-            <div className="space-y-1 mb-2">
-              {tarea.subtareas.map((sub) => (
-                <div key={sub.id} className="flex items-center gap-2 group">
-                  <input type="checkbox" checked={sub.completada}
-                    onChange={() => onToggleSubtarea(tarea.id, sub.id)}
-                    className="w-3 h-3 accent-[#1DB8A0] cursor-pointer flex-shrink-0" />
-                  <p className={"text-xs flex-1 " + (sub.completada ? "line-through text-[#6B7280]" : "text-[#8B93A8]")}>
-                    {sub.titulo}
-                  </p>
-                  {sub.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
-                  <button onClick={() => onEliminarSubtarea(tarea.id, sub.id)}
-                    className="text-[#6B7280] text-xs hover:text-[#F47C5C] opacity-0 group-hover:opacity-100 transition-opacity">
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {subtareaAbiertaId === tarea.id ? (
-            <div className="flex flex-col gap-2 mt-1">
-              <input value={nuevoTituloSubtarea} onChange={(e) => setNuevoTituloSubtarea(e.target.value)}
-                placeholder="Título de la subtarea"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#1DB8A0]" />
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-[#6B7280] text-xs cursor-pointer">
-                  <input type="checkbox" checked={nuevaSubtareaPublica}
-                    onChange={(e) => setNuevaSubtareaPublica(e.target.checked)}
-                    className="w-3 h-3 accent-[#1DB8A0]" />
-                  Visible al cliente
-                </label>
-                <div className="flex gap-2">
-                  <button onClick={() => onAgregarSubtarea(tarea.id)}
-                    className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">
-                    Guardar
-                  </button>
-                  <button onClick={() => { setSubtareaAbiertaId(null); setNuevoTituloSubtarea(""); setNuevaSubtareaPublica(false); }}
-                    className="text-[#6B7280] px-2 py-1 rounded-lg text-xs hover:text-white">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setSubtareaAbiertaId(tarea.id)}
-              className="text-[#6B7280] text-xs hover:text-[#1DB8A0] mt-1">
-              + Subtarea
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Tareas() {
-  const [tareas, setTareas] = useState<Tarea[]>([]);
+  const [tareas, setTareas] = useState<TareaTab[]>([]);
   const [proyectos, setProyectos] = useState<ProyectoOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [filtroProyecto, setFiltroProyecto] = useState("");
   const [filtroPrioridad, setFiltroPrioridad] = useState("todas");
+  const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [vista, setVista] = useState<"lista" | "tarjetas">("tarjetas");
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [proyectoId, setProyectoId] = useState("");
   const [prioridad, setPrioridad] = useState<"alta" | "media" | "baja">("media");
   const [publica, setPublica] = useState(false);
   const [deadline, setDeadline] = useState("");
-  const [notaTareaId, setNotaTareaId] = useState<string | null>(null);
-  const [nuevaNota, setNuevaNota] = useState("");
+  const [nuevaNotaTarea, setNuevaNotaTarea] = useState("");
+  const [nuevasSubtareas, setNuevasSubtareas] = useState<string[]>([]);
+  const [subtareaInput, setSubtareaInput] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
   const [editTitulo, setEditTitulo] = useState("");
   const [editPrioridad, setEditPrioridad] = useState<"alta" | "media" | "baja">("media");
   const [editDeadline, setEditDeadline] = useState("");
   const [editPublica, setEditPublica] = useState(false);
+  const [editSubtareas, setEditSubtareas] = useState<Subtarea[]>([]);
+  const [editSubtareaInput, setEditSubtareaInput] = useState("");
+  const [editNota, setEditNota] = useState("");
 
   // Subtareas
   const [subtareaAbiertaId, setSubtareaAbiertaId] = useState<string | null>(null);
@@ -385,14 +76,16 @@ function Tareas() {
       ...t,
       titulo: t.nombre,
       completada: t.completada || false,
+      estado: t.estado || (t.completada ? "completada" : "pendiente"),
       proyecto_nombre: proyectosMap[t.proyecto_id] || "Sin proyecto",
+      nota: t.nota || (Array.isArray(t.notas) && t.notas.length > 0 ? t.notas[0].texto : ""),
       notas: Array.isArray(t.notas) ? t.notas : [],
       subtareas: Array.isArray(t.subtareas) ? t.subtareas : [],
       folder_id: t.folder_id || undefined,
       folder_url: t.folder_url || undefined,
       aprobada_cliente: t.aprobada_cliente || false,
     }));
-    setTareas(tareasMapeadas);
+    setTareas(tareasMapeadas as TareaTab[]);
     setCargando(false);
   }
 
@@ -403,6 +96,28 @@ function Tareas() {
     return new Promise((resolve) => {
       setModalCarpeta({ nombre, resolve });
     });
+  }
+
+  async function actualizarContadores(proyectoId: string | null) {
+    if (!proyectoId) return;
+    const { data } = await supabase.from("tareas").select("completada").eq("proyecto_id", proyectoId);
+    const total = (data || []).length;
+    const completadas = (data || []).filter((t) => t.completada).length;
+    await supabase.from("proyectos").update({
+      tareas_total: total,
+      tareas_completadas: completadas,
+    }).eq("id", proyectoId);
+  }
+
+  function agregarSubtareaInput() {
+    const s = subtareaInput.trim();
+    if (!s) return;
+    setNuevasSubtareas([...nuevasSubtareas, s]);
+    setSubtareaInput("");
+  }
+
+  function quitarSubtareaInput(index: number) {
+    setNuevasSubtareas(nuevasSubtareas.filter((_, i) => i !== index));
   }
 
   async function agregarTarea() {
@@ -435,6 +150,11 @@ function Tareas() {
       }
     }
 
+    const subtareasFinales = subtareaInput.trim() ? [...nuevasSubtareas, subtareaInput.trim()] : nuevasSubtareas;
+    const notasFinales = nuevaNotaTarea.trim()
+      ? [{ id: Date.now(), texto: nuevaNotaTarea.trim(), fecha: new Date().toISOString().split("T")[0] }]
+      : [];
+
     await supabase.from("tareas").insert({
       user_id: user?.id,
       proyecto_id: proyectoId,
@@ -444,14 +164,17 @@ function Tareas() {
       completada: false,
       visible_cliente: publica,
       deadline: deadline || null,
-      notas: [],
-      subtareas: [],
+      notas: notasFinales,
+      subtareas: subtareasFinales.map((s, i) => ({ id: Date.now() + i, titulo: s, completada: false, publica: false })),
       folder_id,
       folder_url,
     });
 
+    await actualizarContadores(proyectoId);
+
     setTitulo(""); setProyectoId(""); setPrioridad("media"); setPublica(false);
-    setDeadline(""); setCrearCarpetaTarea(false);
+    setDeadline(""); setCrearCarpetaTarea(false); setNuevaNotaTarea("");
+    setNuevasSubtareas([]); setSubtareaInput("");
     setMostrarForm(false); setGuardando(false);
     cargarDatos();
   }
@@ -475,49 +198,45 @@ function Tareas() {
     }
   }
 
+  async function toggleTarea(id: string) {
+    const tarea = tareas.find((t) => t.id === id);
+    if (!tarea) return;
+    await cambiarEstado(id, tarea.completada ? "pendiente" : "completada");
+  }
+
   async function guardarEdicionTarea(id: string) {
+    const nota = editNota.trim();
+    const notas: Nota[] = nota
+      ? [{ id: Date.now(), texto: nota, fecha: new Date().toISOString().split("T")[0] }]
+      : [];
     await supabase.from("tareas").update({
       nombre: editTitulo,
       prioridad: editPrioridad,
       deadline: editDeadline || null,
       visible_cliente: editPublica,
+      subtareas: editSubtareas,
+      notas,
     }).eq("id", id);
     setTareas(tareas.map((t) =>
-      t.id === id ? { ...t, titulo: editTitulo, prioridad: editPrioridad, deadline: editDeadline, publica: editPublica } : t
+      t.id === id ? {
+        ...t,
+        titulo: editTitulo,
+        prioridad: editPrioridad,
+        deadline: editDeadline,
+        publica: editPublica,
+        subtareas: editSubtareas,
+        nota,
+        notas,
+      } : t
     ));
     setEditandoTareaId(null);
   }
 
-  async function agregarNota(tareaId: string) {
-    if (!nuevaNota.trim()) return;
-    const tarea = tareas.find((t) => t.id === tareaId);
-    if (!tarea) return;
-    const nota: Nota = { id: Date.now(), texto: nuevaNota, fecha: new Date().toISOString().split("T")[0] };
-    const nuevasNotas = [...tarea.notas, nota];
-    await supabase.from("tareas").update({ notas: nuevasNotas }).eq("id", tareaId);
-    setNuevaNota(""); setNotaTareaId(null);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, notas: nuevasNotas } : t));
-  }
-
-  async function editarNota(tareaId: string, notaId: number, textoNuevo: string) {
-    const tarea = tareas.find((t) => t.id === tareaId);
-    if (!tarea) return;
-    const nuevasNotas = tarea.notas.map((n) => n.id === notaId ? { ...n, texto: textoNuevo } : n);
-    await supabase.from("tareas").update({ notas: nuevasNotas }).eq("id", tareaId);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, notas: nuevasNotas } : t));
-  }
-
-  async function eliminarNota(tareaId: string, notaId: number) {
-    const tarea = tareas.find((t) => t.id === tareaId);
-    if (!tarea) return;
-    const nuevasNotas = tarea.notas.filter((n) => n.id !== notaId);
-    await supabase.from("tareas").update({ notas: nuevasNotas }).eq("id", tareaId);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, notas: nuevasNotas } : t));
-  }
-
   async function eliminarTarea(id: string) {
+    const tarea = tareas.find((t) => t.id === id);
     await supabase.from("tareas").delete().eq("id", id);
     setTareas(tareas.filter((t) => t.id !== id));
+    if (tarea) await actualizarContadores(tarea.proyecto_id);
   }
 
   async function agregarSubtarea(tareaId: string) {
@@ -562,42 +281,71 @@ function Tareas() {
     setEditPrioridad(tarea.prioridad);
     setEditDeadline(tarea.deadline || "");
     setEditPublica(tarea.publica);
+    setEditSubtareas(tarea.subtareas.map((s) => ({ ...s })));
+    setEditSubtareaInput("");
+    setEditNota(tarea.nota);
   }
 
   const tareasFiltradas = tareas.filter((t) => {
     const coincideBusqueda = t.titulo.toLowerCase().includes(busqueda.toLowerCase());
     const coincidePrioridad = filtroPrioridad === "todas" || t.prioridad === filtroPrioridad;
-    return coincideBusqueda && coincidePrioridad;
+    const coincideProyecto = !filtroProyecto || t.proyecto_id === filtroProyecto;
+    const coincideEstado = filtroEstado === "todos" ||
+      (filtroEstado === "completada" ? (t.completada || t.estado === "completada") : t.estado === filtroEstado && !t.completada);
+    return coincideBusqueda && coincidePrioridad && coincideProyecto && coincideEstado;
   });
 
-  const urgentes = tareasFiltradas.filter((t) => getDiasRestantes(t.deadline) <= 3 && t.estado !== "completada");
-  const enProgreso = tareasFiltradas.filter((t) => t.estado === "en-progreso" && !(getDiasRestantes(t.deadline) <= 3));
-  const pendientes = tareasFiltradas.filter((t) => t.estado === "pendiente" && !(getDiasRestantes(t.deadline) <= 3));
-  const completadas = tareasFiltradas.filter((t) => t.estado === "completada");
+  const grupos = proyectos
+    .map((p) => ({ proyecto: p, tareas: tareasFiltradas.filter((t) => t.proyecto_id === p.id) }))
+    .filter((g) => g.tareas.length > 0);
+  const tareasSinProyecto = tareasFiltradas.filter((t) => !proyectos.some((p) => p.id === t.proyecto_id));
+  const filtrosActivos = filtroProyecto !== "" || filtroPrioridad !== "todas" || filtroEstado !== "todos";
 
-  const totalPendientes = tareas.filter((t) => t.estado === "pendiente").length;
-  const totalEnProgreso = tareas.filter((t) => t.estado === "en-progreso").length;
-  const totalCompletadas = tareas.filter((t) => t.estado === "completada").length;
+  function limpiarFiltros() {
+    setFiltroProyecto("");
+    setFiltroPrioridad("todas");
+    setFiltroEstado("todos");
+  }
+
+  const totalPendientes = tareas.filter((t) => t.estado === "pendiente" && !t.completada).length;
+  const totalEnProgreso = tareas.filter((t) => t.estado === "en-progreso" && !t.completada).length;
+  const totalCompletadas = tareas.filter((t) => t.completada || t.estado === "completada").length;
   const totalAprobadas = tareas.filter((t) => t.aprobada_cliente).length;
 
   const propsComunes = {
-    notaTareaId, nuevaNota, editandoTareaId, editTitulo, editPrioridad, editDeadline, editPublica,
-    subtareaAbiertaId, nuevoTituloSubtarea, nuevaSubtareaPublica,
-    setNotaTareaId, setNuevaNota, setEditandoTareaId, setEditTitulo, setEditPrioridad, setEditDeadline, setEditPublica,
-    setSubtareaAbiertaId, setNuevoTituloSubtarea, setNuevaSubtareaPublica,
+    editandoTareaId,
+    setEditandoTareaId,
+    editTitulo,
+    setEditTitulo,
+    editPrioridad,
+    setEditPrioridad,
+    editDeadline,
+    setEditDeadline,
+    editPublica,
+    setEditPublica,
+    editSubtareas,
+    setEditSubtareas,
+    editSubtareaInput,
+    setEditSubtareaInput,
+    editNota,
+    setEditNota,
+    subtareaAbiertaId,
+    setSubtareaAbiertaId,
+    nuevoTituloSubtarea,
+    setNuevoTituloSubtarea,
+    nuevaSubtareaPublica,
+    setNuevaSubtareaPublica,
+    onToggleTarea: toggleTarea,
     onCambiarEstado: cambiarEstado,
-    onAgregarNota: agregarNota,
-    onEditarNota: editarNota,
-    onEliminarNota: eliminarNota,
-    onEliminarTarea: eliminarTarea,
     onGuardarEdicion: guardarEdicionTarea,
     onAbrirEdicion: abrirEdicion,
+    onEliminarTarea: eliminarTarea,
     onAgregarSubtarea: agregarSubtarea,
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
   };
 
-  if (cargando) return <div className="p-8"><p className="text-[#6B7280] text-sm">Cargando tareas...</p></div>;
+  if (cargando) return <div className="p-8"><p className="text-muted text-sm">Cargando tareas...</p></div>;
 
   return (
     <div className="p-8">
@@ -605,21 +353,21 @@ function Tareas() {
       {/* Modal carpeta existente */}
       {modalCarpeta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-white font-medium mb-2">Carpeta ya existe</h3>
-            <p className="text-[#6B7280] text-sm mb-6">
-              Ya existe una carpeta <span className="text-white">"{modalCarpeta.nombre}"</span> dentro de la carpeta del proyecto en Drive.
+          <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-primary font-medium mb-2">Carpeta ya existe</h3>
+            <p className="text-muted text-sm mb-6">
+              Ya existe una carpeta <span className="text-primary">"{modalCarpeta.nombre}"</span> dentro de la carpeta del proyecto en Drive.
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={() => { modalCarpeta.resolve("usar"); setModalCarpeta(null); }}
-                className="w-full bg-[#1A1F2E] border border-[#1DB8A0]/40 text-white text-sm px-4 py-3 rounded-lg hover:bg-[#1DB8A0]/10 transition-colors text-left">
-                <p className="font-medium text-[#1DB8A0]">Usar carpeta existente</p>
-                <p className="text-[#6B7280] text-xs mt-0.5">Vincular la tarea a la carpeta que ya existe</p>
+                className="w-full bg-surface border border-accent/40 text-primary text-sm px-4 py-3 rounded-lg hover:bg-accent/10 transition-colors text-left">
+                <p className="font-medium text-accent">Usar carpeta existente</p>
+                <p className="text-muted text-xs mt-0.5">Vincular la tarea a la carpeta que ya existe</p>
               </button>
               <button onClick={() => { modalCarpeta.resolve("nueva"); setModalCarpeta(null); }}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] text-white text-sm px-4 py-3 rounded-lg hover:border-[#7C5CBF]/40 transition-colors text-left">
+                className="w-full bg-surface border border-edge text-primary text-sm px-4 py-3 rounded-lg hover:border-violet/40 transition-colors text-left">
                 <p className="font-medium">Crear carpeta nueva</p>
-                <p className="text-[#6B7280] text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
+                <p className="text-muted text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
               </button>
             </div>
           </div>
@@ -628,169 +376,229 @@ function Tareas() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-white">Tareas</h2>
-          <p className="text-[#6B7280] mt-1">
+          <h2 className="text-[26px] font-semibold tracking-tight text-primary">Tareas</h2>
+          <p className="text-muted mt-1">
             {totalPendientes} pendientes · {totalEnProgreso} en progreso · {totalCompletadas} completadas
-            {totalAprobadas > 0 && <span className="text-[#1DB8A0]"> · {totalAprobadas} aprobadas por cliente</span>}
+            {totalAprobadas > 0 && <span className="text-accent"> · {totalAprobadas} aprobadas por cliente</span>}
           </p>
         </div>
         <button onClick={() => setMostrarForm(!mostrarForm)}
-          className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
+          className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
           + Nueva tarea
         </button>
       </div>
 
-      <div className="flex gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
         <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre de tarea..."
-          className="flex-1 bg-[#141824] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
-        <div className="flex gap-1 bg-[#141824] border border-[#252B3B] rounded-lg p-1">
-          {[
-            { id: "todas", label: "Todas" },
-            { id: "alta", label: "Alta" },
-            { id: "media", label: "Media" },
-            { id: "baja", label: "Baja" },
-          ].map((f) => (
-            <button key={f.id} onClick={() => setFiltroPrioridad(f.id)}
-              className={"text-xs px-3 py-1.5 rounded-md transition-colors " + (filtroPrioridad === f.id ? "bg-[#1A1F2E] text-white" : "text-[#6B7280] hover:text-white")}>
-              {f.label}
-            </button>
-          ))}
+          className="flex-1 min-w-[200px] bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
+        <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
+          <button onClick={() => setVista("lista")}
+            className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "lista" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
+            Lista
+          </button>
+          <button onClick={() => setVista("tarjetas")}
+            className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "tarjetas" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
+            Tarjetas
+          </button>
         </div>
+        <button onClick={() => setMostrarFiltros(!mostrarFiltros)}
+          className={"flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors " +
+            (mostrarFiltros || filtrosActivos
+              ? "bg-surface border-edge text-primary"
+              : "bg-canvas border-edge text-muted hover:text-primary hover:border-accent/40")}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+          </svg>
+          Filtros
+          {filtrosActivos && <span className="w-2 h-2 rounded-full bg-accent" />}
+        </button>
       </div>
 
+      {mostrarFiltros && (
+        <div className="bg-canvas border border-edge rounded-lg p-4 mb-6 flex flex-wrap items-end gap-4">
+          <div className="min-w-[180px] flex-1">
+            <label className="text-muted text-xs mb-1 block">Proyecto</label>
+            <Select value={filtroProyecto} onChange={setFiltroProyecto}
+              options={[
+                { value: "", label: "Todos los proyectos" },
+                ...proyectos.map((p): SelectOption => ({ value: p.id, label: p.nombre })),
+              ]} />
+          </div>
+          <div className="min-w-[160px]">
+            <label className="text-muted text-xs mb-1 block">Prioridad</label>
+            <Select value={filtroPrioridad} onChange={setFiltroPrioridad}
+              options={[
+                { value: "todas", label: "Todas las prioridades" },
+                { value: "alta", label: "Alta" },
+                { value: "media", label: "Media" },
+                { value: "baja", label: "Baja" },
+              ]} />
+          </div>
+          <div className="min-w-[160px]">
+            <label className="text-muted text-xs mb-1 block">Estado</label>
+            <Select value={filtroEstado} onChange={setFiltroEstado}
+              options={[
+                { value: "todos", label: "Todos los estados" },
+                { value: "pendiente", label: "Pendiente" },
+                { value: "en-progreso", label: "En progreso" },
+                { value: "completada", label: "Completada" },
+              ]} />
+          </div>
+          {filtrosActivos && (
+            <button onClick={limpiarFiltros}
+              className="text-accent text-sm font-medium px-3 py-2 hover:opacity-90">
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      )}
+
       {mostrarForm && (
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-6">
-          <h3 className="text-white font-medium mb-4">Nueva tarea</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-canvas border border-edge rounded-xl p-5 mb-6">
+          <h3 className="text-primary font-medium mb-4">Nueva tarea</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Titulo *</label>
+              <label className="text-muted text-xs mb-1 block">Titulo *</label>
               <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Diseño de pantallas"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
+                className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Proyecto *</label>
-              <select value={proyectoId} onChange={(e) => { setProyectoId(e.target.value); setCrearCarpetaTarea(false); }}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
-                <option value="">Selecciona un proyecto</option>
-                {proyectos.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre}{p.folder_id ? " 📁" : ""}</option>
-                ))}
-              </select>
+              <label className="text-muted text-xs mb-1 block">Proyecto *</label>
+              <Select value={proyectoId} onChange={(v) => { setProyectoId(v); setCrearCarpetaTarea(false); }}
+                options={[
+                  { value: "", label: "Selecciona un proyecto" },
+                  ...proyectos.map((p): SelectOption => ({ value: p.id, label: p.nombre + (p.folder_id ? " 📁" : "") })),
+                ]} />
             </div>
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Prioridad</label>
-              <select value={prioridad} onChange={(e) => setPrioridad(e.target.value as "alta" | "media" | "baja")}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]">
-                <option value="alta">Alta</option>
-                <option value="media">Media</option>
-                <option value="baja">Baja</option>
-              </select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex gap-1 bg-surface border border-edge rounded-lg p-0.5">
+              {(["alta", "media", "baja"] as const).map((p) => (
+                <button key={p} type="button" onClick={() => setPrioridad(p)}
+                  className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
+                    (prioridad === p ? prioridadConfig[p].color : "text-muted hover:text-primary")}>
+                  {prioridadConfig[p].label}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="text-[#6B7280] text-xs mb-1 block">Fecha limite</label>
+            <button type="button" onClick={() => setPublica(!publica)}
+              className={"flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium " +
+                (publica
+                  ? "bg-accent/10 border-accent/40 text-accent"
+                  : "bg-surface border-edge text-muted hover:text-primary")}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                {publica ? (
+                  <>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </>
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                )}
+              </svg>
+              {publica ? "Visible al cliente" : "Oculta para el cliente"}
+            </button>
+            <label className="flex items-center gap-2">
+              <span className="text-muted text-xs">Fecha limite</span>
               <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]" />
-            </div>
+                className="bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
+            </label>
           </div>
 
-          <div className="flex items-center gap-3 mb-3">
-            <input type="checkbox" id="publica" checked={publica} onChange={(e) => setPublica(e.target.checked)} className="w-4 h-4 accent-[#1DB8A0]" />
-            <label htmlFor="publica" className="text-[#6B7280] text-sm cursor-pointer">Visible para el cliente en el portal</label>
-          </div>
-
-          {hayDrive && proyectoId ? (
+          {hayDrive && (
             proyectoTieneCarpeta ? (
-              <div className="flex items-center gap-3 mb-4 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 mb-4 bg-surface border border-edge rounded-lg px-3 py-2">
                 <input type="checkbox" id="checkbox-drive-tarea"
                   checked={crearCarpetaTarea}
                   onChange={(e) => setCrearCarpetaTarea(e.target.checked)}
-                  className="w-4 h-4 accent-[#1DB8A0] cursor-pointer" />
+                  className="w-3.5 h-3.5 accent-accent cursor-pointer" />
                 <label htmlFor="checkbox-drive-tarea" className="cursor-pointer">
-                  <p className="text-white text-sm">Crear carpeta en Google Drive <span className="text-[#6B7280] text-xs">(opcional)</span></p>
-                  <p className="text-[#6B7280] text-xs mt-0.5">
-                    Se creará <span className="text-[#1DB8A0]">"{titulo || "nombre de la tarea"}"</span> dentro de la carpeta de <span className="text-white">{proyectoSeleccionado?.nombre}</span>
-                  </p>
+                  <p className="text-muted text-xs">Crear carpeta en Drive para esta tarea <span className="text-muted">(opcional)</span></p>
                 </label>
               </div>
             ) : (
-              <div className="flex items-center gap-3 mb-4 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-4 py-3 opacity-60">
-                <div className="w-4 h-4 rounded border border-[#252B3B] bg-[#141824] flex-shrink-0" />
-                <div>
-                  <p className="text-[#6B7280] text-sm">Crear carpeta en Google Drive</p>
-                  <p className="text-[#6B7280] text-xs mt-0.5">
-                    Este proyecto no tiene carpeta en Drive. Créala desde <span className="text-[#1DB8A0]">Proyectos</span> para activar esta opción
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 mb-4 bg-surface border border-edge rounded-lg px-3 py-2 opacity-50">
+                <div className="w-3.5 h-3.5 rounded border border-edge flex-shrink-0" />
+                <p className="text-muted text-xs">
+                  {proyectoId ? "Este proyecto no tiene carpeta en Drive" : "Selecciona un proyecto para ver las opciones de Drive"}
+                </p>
               </div>
             )
-          ) : hayDrive && !proyectoId ? (
-            <div className="flex items-center gap-3 mb-4 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-4 py-3 opacity-60">
-              <div className="w-4 h-4 rounded border border-[#252B3B] bg-[#141824] flex-shrink-0" />
-              <p className="text-[#6B7280] text-sm">Selecciona un proyecto para ver las opciones de Drive</p>
+          )}
+
+          <div className="mb-4">
+            <p className="text-muted text-xs mb-2">Subtareas</p>
+            <div className="flex gap-2 mb-2">
+              <input value={subtareaInput} onChange={(e) => setSubtareaInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarSubtareaInput(); } }}
+                placeholder="Subtarea de la tarea..."
+                className="flex-1 bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
+              <button type="button" onClick={agregarSubtareaInput}
+                className="bg-surface border border-edge text-primary text-xs font-medium px-3 py-1.5 rounded-lg hover:border-accent/40">
+                Agregar
+              </button>
             </div>
-          ) : null}
+            {nuevasSubtareas.length > 0 && (
+              <div className="space-y-1">
+                {nuevasSubtareas.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-surface border border-edge rounded-lg px-3 py-1.5">
+                    <p className="text-primary text-xs flex-1">{s}</p>
+                    <button type="button" onClick={() => quitarSubtareaInput(i)}
+                      className="text-muted text-xs hover:text-coral">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-4">
+            <p className="text-muted text-xs mb-2">Nota</p>
+            <textarea value={nuevaNotaTarea} onChange={(e) => setNuevaNotaTarea(e.target.value)}
+              placeholder="Escribe una nota para esta tarea (opcional)..."
+              rows={2}
+              className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-xs focus:outline-none focus:border-accent resize-none" />
+          </div>
 
           <div className="flex gap-3">
             <button onClick={agregarTarea} disabled={guardando || !titulo || !proyectoId}
-              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50">
+              className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50">
               {guardando ? "Guardando..." : "Guardar tarea"}
             </button>
-            <button onClick={() => setMostrarForm(false)} className="text-[#6B7280] px-4 py-2 rounded-lg text-sm hover:text-white">
+            <button onClick={() => setMostrarForm(false)} className="text-muted px-4 py-2 rounded-lg text-sm hover:text-primary">
               Cancelar
             </button>
           </div>
         </div>
       )}
 
-      <div className="space-y-6">
-        {urgentes.length > 0 && (
-          <div>
-            <h3 className="text-[#F47C5C] text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
-              Urgente — vence en 3 dias o menos
-              <span className="bg-[#F47C5C]/10 text-[#F47C5C] px-2 py-0.5 rounded-full">{urgentes.length}</span>
-            </h3>
-            <div className="space-y-2">
-              {urgentes.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
+      <div className="space-y-8">
+        {grupos.map(({ proyecto, tareas: tareasGrupo }) => (
+          <div key={proyecto.id}>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-primary text-sm font-semibold">{proyecto.nombre}</h3>
+              <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasGrupo.length}</span>
+            </div>
+            <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
+              {tareasGrupo.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
             </div>
           </div>
-        )}
-        {enProgreso.length > 0 && (
+        ))}
+        {tareasSinProyecto.length > 0 && (
           <div>
-            <h3 className="text-[#7C5CBF] text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
-              En progreso
-              <span className="bg-[#7C5CBF]/10 text-[#7C5CBF] px-2 py-0.5 rounded-full">{enProgreso.length}</span>
-            </h3>
-            <div className="space-y-2">
-              {enProgreso.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-primary text-sm font-semibold">Sin proyecto</h3>
+              <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasSinProyecto.length}</span>
             </div>
-          </div>
-        )}
-        {pendientes.length > 0 && (
-          <div>
-            <h3 className="text-[#6B7280] text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
-              Pendientes
-              <span className="bg-[#6B7280]/10 text-[#6B7280] px-2 py-0.5 rounded-full">{pendientes.length}</span>
-            </h3>
-            <div className="space-y-2">
-              {pendientes.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
-            </div>
-          </div>
-        )}
-        {completadas.length > 0 && (
-          <div>
-            <h3 className="text-[#6B7280] text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
-              Completadas
-              <span className="bg-[#6B7280]/10 text-[#6B7280] px-2 py-0.5 rounded-full">{completadas.length}</span>
-            </h3>
-            <div className="space-y-2 opacity-50">
-              {completadas.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
+            <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
+              {tareasSinProyecto.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
             </div>
           </div>
         )}
         {tareasFiltradas.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-[#6B7280]">
+            <p className="text-muted">
               {tareas.length === 0 ? "No tienes tareas todavia. Crea la primera con el boton de arriba." : "No se encontraron tareas"}
             </p>
           </div>

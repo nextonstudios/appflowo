@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const RESEND_API_KEY = "re_RtjCi1yk_H6BLN6yN9s2P1DwWbQ2ha6NM";
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -14,6 +14,16 @@ serve(async (req) => {
 
   try {
     const { factura, emailCliente } = await req.json();
+
+    if (!RESEND_API_KEY) {
+      return new Response(JSON.stringify({ ok: false, error: "RESEND_API_KEY no configurada" }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
 
     const total = factura.conceptos.reduce((acc: number, c: any) => acc + c.monto, 0);
     const restante = total - factura.abonado;

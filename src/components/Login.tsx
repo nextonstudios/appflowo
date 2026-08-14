@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import Logo from "./Logo";
+import { contrasenaValida } from "../lib/contrasena";
+import ChecklistContrasena from "./ChecklistContrasena";
 
 interface Props {
   onLogin: () => void;
@@ -23,12 +26,12 @@ function InputPassword({ value, onChange, mostrar, onToggle }: InputPasswordProp
         placeholder="••••••••"
         autoComplete="off"
         style={{ WebkitTextSecurity: mostrar ? "none" : "disc" } as React.CSSProperties}
-        className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 pr-10 text-white text-sm focus:outline-none focus:border-[#1DB8A0]"
+        className="w-full bg-surface border border-edge rounded-lg px-3 py-2 pr-10 text-primary text-sm focus:outline-none focus:border-accent"
       />
       <button
         type="button"
         onClick={onToggle}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-white hover:text-[#1DB8A0] transition-colors"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-primary hover:text-accent transition-colors"
       >
         {mostrar ? (
           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -71,6 +74,11 @@ function Login({ onLogin, mensajeExterno }: Props) {
     setError("");
 
     if (esRegistro) {
+      if (!contrasenaValida(password)) {
+        setError("La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.");
+        setCargando(false);
+        return;
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -121,36 +129,36 @@ function Login({ onLogin, mensajeExterno }: Props) {
 
   if (esRecuperar) {
     return (
-      <div className="min-h-screen bg-[#1A1F2E] flex items-center justify-center px-4">
+      <div className="min-h-screen bg-surface flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
-            <img src="/logoFlowo.png" alt="Logo Flowo" className="w-44 mx-auto mb-3" />
-            <p className="text-[#6B7280] mt-2 text-sm">Plataforma para freelancers</p>
+            <Logo className="w-44 mx-auto mb-3" />
+            <p className="text-muted mt-2 text-sm">Plataforma para freelancers</p>
           </div>
 
-          <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6">
-            <h2 className="text-white font-medium text-lg mb-2">Recuperar contraseña</h2>
-            <p className="text-[#6B7280] text-xs mb-6">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
+          <div className="bg-canvas border border-edge rounded-xl p-6">
+            <h2 className="text-primary font-medium text-lg mb-2">Recuperar contraseña</h2>
+            <p className="text-muted text-xs mb-6">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
 
             <div className="mb-6">
-              <label className="text-[#6B7280] text-xs mb-1 block">Correo</label>
+              <label className="text-muted text-xs mb-1 block">Correo</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="tu@correo.com"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]"
+                className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
               />
             </div>
 
-            {error && <p className="text-xs mb-4 text-center text-[#F47C5C]">{error}</p>}
-            {mensaje && <p className="text-xs mb-4 text-center text-[#1DB8A0]">{mensaje}</p>}
+            {error && <p className="text-xs mb-4 text-center text-coral">{error}</p>}
+            {mensaje && <p className="text-xs mb-4 text-center text-accent">{mensaje}</p>}
 
             {!mensaje && (
               <button
                 onClick={handleRecuperar}
                 disabled={cargando}
-                className="w-full bg-[#1DB8A0] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#17a08b] disabled:opacity-50 mb-4"
+                className="w-full bg-accent text-onaccent rounded-lg py-2 text-sm font-medium hover:bg-accent2 disabled:opacity-50 mb-4"
               >
                 {cargando ? "Enviando..." : "Enviar enlace"}
               </button>
@@ -158,71 +166,72 @@ function Login({ onLogin, mensajeExterno }: Props) {
 
             <button
               onClick={() => { setEsRecuperar(false); setError(""); setMensaje(""); }}
-              className="w-full text-[#6B7280] text-xs hover:text-white text-center"
+              className="w-full text-muted text-xs hover:text-primary text-center"
             >
               Volver al inicio de sesión
             </button>
           </div>
 
-          <p className="text-center text-[#6B7280] text-xs mt-6">Creado por NextOn Studios</p>
+          <p className="text-center text-muted text-xs mt-6">Creado por NextOn Studios</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#1A1F2E] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
 
         <div className="text-center mb-8">
           <img src="/logoFlowo.png" alt="Logo Flowo" className="w-44 mx-auto mb-3" />
-          <p className="text-[#6B7280] mt-2 text-sm">Plataforma para freelancers</p>
+          <p className="text-muted mt-2 text-sm">Plataforma para freelancers</p>
         </div>
 
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6">
-          <h2 className="text-white font-medium text-lg mb-6">
+        <div className="bg-canvas border border-edge rounded-xl p-6">
+          <h2 className="text-primary font-medium text-lg mb-6">
             {esRegistro ? "Crear cuenta" : "Iniciar sesión"}
           </h2>
 
           {esRegistro && (
             <div className="mb-4">
-              <label className="text-[#6B7280] text-xs mb-1 block">Nombre</label>
+              <label className="text-muted text-xs mb-1 block">Nombre</label>
               <input
                 type="text"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder="Tu nombre"
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]"
+                className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
               />
             </div>
           )}
 
           <div className="mb-4">
-            <label className="text-[#6B7280] text-xs mb-1 block">Correo</label>
+            <label className="text-muted text-xs mb-1 block">Correo</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="tu@correo.com"
-              className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0]"
+              className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
             />
           </div>
 
           <div className="mb-2">
-            <label className="text-[#6B7280] text-xs mb-1 block">Contraseña</label>
+            <label className="text-muted text-xs mb-1 block">Contraseña</label>
             <InputPassword
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               mostrar={mostrarPassword}
               onToggle={() => setMostrarPassword(!mostrarPassword)}
             />
+            {esRegistro && <ChecklistContrasena password={password} />}
           </div>
 
           {!esRegistro && (
             <div className="flex justify-end mb-4">
               <button
                 onClick={() => { setEsRecuperar(true); setError(""); }}
-                className="text-[#6B7280] text-xs hover:text-[#1DB8A0]"
+                className="text-muted text-xs hover:text-accent"
               >
                 ¿Olvidaste tu contraseña?
               </button>
@@ -236,41 +245,41 @@ function Login({ onLogin, mensajeExterno }: Props) {
                 id="terminos"
                 checked={terminosAceptados}
                 onChange={(e) => setTerminosAceptados(e.target.checked)}
-                className="mt-1 accent-[#1DB8A0]"
+                className="mt-1 accent-accent"
               />
-              <label htmlFor="terminos" className="text-[#6B7280] text-xs cursor-pointer">
+              <label htmlFor="terminos" className="text-muted text-xs cursor-pointer">
                 Acepto los{" "}
                 <a href="https://appflowo.com/terminos-y-condiciones-de-uso/" target="_blank" rel="noopener noreferrer"
-                  className="text-[#1DB8A0] hover:underline">
+                  className="text-accent hover:underline">
                   términos y condiciones
                 </a>
               </label>
             </div>
           )}
 
-          {error && <p className="text-xs mb-4 text-center text-[#F47C5C]">{error}</p>}
-          {mensaje && <p className="text-xs mb-4 text-center text-[#1DB8A0]">{mensaje}</p>}
+          {error && <p className="text-xs mb-4 text-center text-coral">{error}</p>}
+          {mensaje && <p className="text-xs mb-4 text-center text-accent">{mensaje}</p>}
 
           <button
             onClick={handleSubmit}
             disabled={cargando || (esRegistro && !terminosAceptados)}
-            className="w-full bg-[#1DB8A0] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#17a08b] disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            className="w-full bg-accent text-onaccent rounded-lg py-2 text-sm font-medium hover:bg-accent2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
           >
             {cargando ? "Cargando..." : esRegistro ? "Crear cuenta" : "Entrar"}
           </button>
 
-          <p className="text-center text-[#6B7280] text-xs mt-4">
+          <p className="text-center text-muted text-xs mt-4">
             {esRegistro ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?"}{" "}
             <button
               onClick={() => { setEsRegistro(!esRegistro); setError(""); setMensaje(""); setTerminosAceptados(false); }}
-              className="text-[#1DB8A0] hover:underline"
+              className="text-accent hover:underline"
             >
               {esRegistro ? "Inicia sesión" : "Regístrate"}
             </button>
           </p>
         </div>
 
-        <p className="text-center text-[#6B7280] text-xs mt-6">Creado por NextOn Studios</p>
+        <p className="text-center text-muted text-xs mt-6">Creado por NextOn Studios</p>
       </div>
     </div>
   );

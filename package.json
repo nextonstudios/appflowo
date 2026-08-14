@@ -8,7 +8,7 @@
   "build": "vite build",
   "preview": "vite preview",
   "tauri": "tauri",
-  "tauri:build": "cross-env TAURI_SIGNING_PRIVATE_KEY=dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5b0VjMk1JK3AybEQ0blNaTVlhU1JoeDdtZW12eDdHWTRFQ3VHZnBTbWprY0FBQkFBQUFBQUFBQUFBQUlBQUFBQXBGUEpuM3BIY2loSXZCOXJGTUF0OHZpYjJRaW5aODdGTTkvc2swb3FDbGdyckw0eVBxNG1OV29BS2YzcGN5R0lKMUtLY3YrbXVWZ29zYy9GMElPZjZaaFhTNldYM1FVUjhFd3RKV0hUK2l5UkR2VmsyUGUzRmJlLzNLV3JGN3h3U0hBTE1udVhWNEU9Cg== tauri build"
+  "tauri:build": "tauri build"
 },
   
   "dependencies": {

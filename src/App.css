@@ -1,5 +1,143 @@
 @import "tailwindcss";
 
+@theme {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-edge: var(--edge);
+  --color-edge2: var(--edge2);
+  --color-muted: var(--muted);
+  --color-muted2: var(--muted2);
+  --color-primary: var(--primary);
+  --color-onaccent: var(--onaccent);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent2);
+  --color-violet: var(--violet);
+  --color-coral: var(--coral);
+  --color-danger: var(--danger);
+  --color-gray: var(--gray);
+}
+
+:root {
+  --canvas: #141824;
+  --surface: #1A1F2E;
+  --surface2: #2B3044;
+  --edge: #252B3B;
+  --edge2: #3A4154;
+  --muted: #9CA6B8;
+  --muted2: #AEB7CB;
+  --primary: #FFFFFF;
+  --onaccent: #0E1A16;
+  --accent: #1DB8A0;
+  --accent2: #17a08b;
+  --violet: #7C5CBF;
+  --coral: #F47C5C;
+  --danger: #F05C5C;
+  --gray: #6B7280;
+}
+
+.light {
+  --canvas: #F2F4F8;
+  --surface: #FFFFFF;
+  --surface2: #EFF3F8;
+  --edge: #DDE3EE;
+  --edge2: #C7D0DF;
+  --muted: #5B6478;
+  --muted2: #8794AD;
+  --primary: #0F172A;
+  --onaccent: #0E1A16;
+  --accent: #0F9B87;
+  --accent2: #0C8572;
+  --violet: #6D4FC4;
+  --coral: #E2532B;
+  --danger: #DC4444;
+  --gray: #6B7280;
+}
+
+/* Gama de acentos seleccionables (teal es el oficial por defecto) */
+
+:root[data-accent="violeta"] {
+  --accent: #7C5CBF;
+  --accent2: #6A4BB0;
+  --onaccent: #FFFFFF;
+}.light[data-accent="violeta"] {
+  --accent: #6D4FC4;
+  --accent2: #5B3EA8;
+  --onaccent: #FFFFFF;
+}
+
+:root[data-accent="azul"] {
+  --accent: #3B82F6;
+  --accent2: #2F74F0;
+  --onaccent: #0E1A16;
+}
+.light[data-accent="azul"] {
+  --accent: #2563EB;
+  --accent2: #1E50C8;
+  --onaccent: #FFFFFF;
+}
+
+:root[data-accent="ambar"] {
+  --accent: #F59E0B;
+  --accent2: #E08E00;
+  --onaccent: #0E1A16;
+}
+.light[data-accent="ambar"] {
+  --accent: #D97706;
+  --accent2: #B45309;
+  --onaccent: #0E1A16;
+}
+
+:root[data-accent="rosa"] {
+  --accent: #EC4899;
+  --accent2: #DB2777;
+  --onaccent: #0E1A16;
+}
+.light[data-accent="rosa"] {
+  --accent: #DB2777;
+  --accent2: #BE185D;
+  --onaccent: #FFFFFF;
+}
+
+:root {
+  font-size: 16px;
+  --fuente: "Quicksand", system-ui, -apple-system, sans-serif;
+}
+:root[data-tam="pequena"] {
+  font-size: 15px;
+}
+:root[data-tam="grande"] {
+  font-size: 17.5px;
+}
+:root[data-tam="muy-grande"] {
+  font-size: 19px;
+}
+
+:root[data-fuente="quicksand"] {
+  --fuente: "Quicksand", system-ui, -apple-system, sans-serif;
+}
+:root[data-fuente="poppins"] {
+  --fuente: "Poppins", system-ui, -apple-system, sans-serif;
+}
+:root[data-fuente="jakarta"] {
+  --fuente: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
+:root[data-fuente="inter"] {
+  --fuente: "Inter", system-ui, -apple-system, sans-serif;
+}
+:root[data-fuente="nunito"] {
+  --fuente: "Nunito", system-ui, -apple-system, sans-serif;
+}
+:root[data-fuente="grotesk"] {
+  --fuente: "Space Grotesk", system-ui, -apple-system, sans-serif;
+}
+
+body {
+  font-family: var(--fuente);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -9,10 +147,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #252B3B;
+  background: var(--edge);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #1DB8A0;
+  background: var(--accent);
 }

@@ -2,32 +2,9 @@ import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
-
-interface Nota {
-  id: number;
-  texto: string;
-  fecha: string;
-}
-
-interface Subtarea {
-  id: number;
-  titulo: string;
-  completada: boolean;
-  publica: boolean;
-}
-
-interface Tarea {
-  id: string;
-  titulo: string;
-  completada: boolean;
-  publica: boolean;
-  prioridad: "alta" | "media" | "baja";
-  nota: string;
-  folder_id?: string;
-  folder_url?: string;
-  subtareas: Subtarea[];
-  aprobada_cliente: boolean;
-}
+import TareaItem, { prioridadConfig, type Tarea, type Subtarea, type Nota } from "./TareaItem";
+import { formatearMoneda } from "../lib/moneda";
+import { useMoneda } from "../hooks/useMoneda";
 
 interface Registro {
   id: string;
@@ -70,16 +47,10 @@ interface Props {
 }
 
 const estadoConfig = {
-  "activo": { label: "En tiempo", color: "text-[#1DB8A0] bg-[#1DB8A0]/10" },
-  "en-riesgo": { label: "En riesgo", color: "text-[#F47C5C] bg-[#F47C5C]/10" },
+  "activo": { label: "En tiempo", color: "text-accent bg-accent/10" },
+  "en-riesgo": { label: "En riesgo", color: "text-coral bg-coral/10" },
   "retrasado": { label: "Retrasado", color: "text-red-400 bg-red-400/10" },
-  "completado": { label: "Completado", color: "text-[#6B7280] bg-[#6B7280]/10" },
-};
-
-const prioridadConfig = {
-  "alta": { label: "Alta", color: "text-[#F47C5C] bg-[#F47C5C]/10" },
-  "media": { label: "Media", color: "text-[#7C5CBF] bg-[#7C5CBF]/10" },
-  "baja": { label: "Baja", color: "text-[#6B7280] bg-[#6B7280]/10" },
+  "completado": { label: "Completado", color: "text-muted bg-gray/10" },
 };
 
 function formatTiempo(segundos: number) {
@@ -95,16 +66,20 @@ function formatFecha(iso: string) {
 }
 
 function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
+  const moneda = useMoneda();
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [notas, setNotas] = useState<Nota[]>([]);
   const [mostrarFormTarea, setMostrarFormTarea] = useState(false);
   const [nuevoTitulo, setNuevoTitulo] = useState("");
   const [nuevaPrioridad, setNuevaPrioridad] = useState<"alta" | "media" | "baja">("media");
-  const [nuevaPublica, setNuevaPublica] = useState(false);
-  const [nuevaNota, setNuevaNota] = useState("");
-  const [notaTareaId, setNotaTareaId] = useState<string | null>(null);
+  const [nuevaPublica, setNuevaPublica] = useState(true);
+  const [nuevaNotaTarea, setNuevaNotaTarea] = useState("");
+  const [nuevasSubtareas, setNuevasSubtareas] = useState<string[]>([]);
+  const [subtareaInput, setSubtareaInput] = useState("");
   const [nuevaNotaProyecto, setNuevaNotaProyecto] = useState("");
+  const [editandoNotaId, setEditandoNotaId] = useState<number | null>(null);
+  const [notaProyectoEdit, setNotaProyectoEdit] = useState("");
   const [mostrarFormNota, setMostrarFormNota] = useState(false);
   const [finalizado, setFinalizado] = useState(proyecto.estado === "completado");
   const [fechaFinalizacion, setFechaFinalizacion] = useState("");
@@ -114,6 +89,14 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   const [subtareaAbiertaId, setSubtareaAbiertaId] = useState<string | null>(null);
   const [nuevoTituloSubtarea, setNuevoTituloSubtarea] = useState("");
   const [nuevaSubtareaPublica, setNuevaSubtareaPublica] = useState(false);
+  const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
+  const [editTitulo, setEditTitulo] = useState("");
+  const [editPrioridad, setEditPrioridad] = useState<"alta" | "media" | "baja">("media");
+  const [editPublica, setEditPublica] = useState(true);
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editSubtareas, setEditSubtareas] = useState<Subtarea[]>([]);
+  const [editSubtareaInput, setEditSubtareaInput] = useState("");
+  const [editNota, setEditNota] = useState("");
   const [hayDrive, setHayDrive] = useState(false);
   const [crearCarpetaTarea, setCrearCarpetaTarea] = useState(false);
   const [modalCarpeta, setModalCarpeta] = useState<{
@@ -199,9 +182,12 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       id: t.id,
       titulo: t.nombre,
       completada: t.completada,
+      estado: t.estado || (t.completada ? "completada" : "pendiente"),
+      deadline: t.deadline || "",
       publica: t.visible_cliente,
       prioridad: t.prioridad,
-      nota: t.nota || "",
+      nota: t.nota || (Array.isArray(t.notas) && t.notas.length > 0 ? t.notas[0].texto : ""),
+      notas: Array.isArray(t.notas) ? t.notas : [],
       folder_id: t.folder_id || undefined,
       folder_url: t.folder_url || undefined,
       subtareas: Array.isArray(t.subtareas) ? t.subtareas : [],
@@ -276,9 +262,14 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     if (finalizado) return;
     const tarea = tareas.find((t) => t.id === id);
     if (!tarea) return;
-    const nuevaCompletada = !tarea.completada;
-    await supabase.from("tareas").update({ completada: nuevaCompletada }).eq("id", id);
-    const nuevasTareas = tareas.map((t) => t.id === id ? { ...t, completada: nuevaCompletada } : t);
+    await cambiarEstado(id, tarea.completada ? "pendiente" : "completada");
+  }
+
+  async function cambiarEstado(id: string, nuevoEstado: "pendiente" | "en-progreso" | "completada") {
+    if (finalizado) return;
+    const esCompletada = nuevoEstado === "completada";
+    await supabase.from("tareas").update({ estado: nuevoEstado, completada: esCompletada }).eq("id", id);
+    const nuevasTareas = tareas.map((t) => t.id === id ? { ...t, estado: nuevoEstado, completada: esCompletada } : t);
     setTareas(nuevasTareas);
     await supabase.from("proyectos").update({
       tareas_total: nuevasTareas.length,
@@ -315,6 +306,14 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       }
     }
 
+    const pendienteSubtarea = subtareaInput.trim();
+    const subtareasFinales = pendienteSubtarea ? [...nuevasSubtareas, pendienteSubtarea] : nuevasSubtareas;
+    const subtareasCreadas: Subtarea[] = subtareasFinales
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s, i) => ({ id: Date.now() + i, titulo: s, completada: false, publica: nuevaPublica }));
+    const notaTarea = nuevaNotaTarea.trim();
+
     const { data } = await supabase.from("tareas").insert({
       user_id: user?.id,
       proyecto_id: proyecto.id,
@@ -323,23 +322,34 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       visible_cliente: nuevaPublica,
       completada: false,
       notas: [],
-      subtareas: [],
+      subtareas: subtareasCreadas,
       estado: "pendiente",
       folder_id,
       folder_url,
     }).select().single();
 
     if (data) {
+      if (notaTarea) {
+        const { error: errNota } = await supabase.from("tareas").update({ nota: notaTarea }).eq("id", data.id);
+        if (errNota) {
+          await supabase.from("tareas").update({
+            notas: [{ id: Date.now(), texto: notaTarea, fecha: new Date().toISOString() }],
+          }).eq("id", data.id);
+        }
+      }
       const nuevasTareas = [...tareas, {
         id: data.id,
         titulo: data.nombre,
         completada: false,
+        estado: "pendiente" as const,
+        deadline: "",
         publica: nuevaPublica,
         prioridad: nuevaPrioridad,
-        nota: "",
+        nota: notaTarea,
+        notas: notaTarea ? [{ id: Date.now(), texto: notaTarea, fecha: new Date().toISOString() }] : [],
         folder_id: data.folder_id || undefined,
         folder_url: data.folder_url || undefined,
-        subtareas: [],
+        subtareas: subtareasCreadas,
         aprobada_cliente: false,
       }];
       setTareas(nuevasTareas);
@@ -350,16 +360,86 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     }
     setNuevoTitulo("");
     setNuevaPrioridad("media");
-    setNuevaPublica(false);
+    setNuevaPublica(true);
+    setNuevaNotaTarea("");
+    setNuevasSubtareas([]);
+    setSubtareaInput("");
     setCrearCarpetaTarea(false);
     setMostrarFormTarea(false);
   }
 
-  async function guardarNotaTarea(id: string, texto: string) {
-    await supabase.from("tareas").update({ nota: texto }).eq("id", id);
-    setTareas(tareas.map((t) => t.id === id ? { ...t, nota: texto } : t));
-    setNotaTareaId(null);
-    setNuevaNota("");
+  function agregarSubtareaInput() {
+    if (!subtareaInput.trim()) return;
+    setNuevasSubtareas([...nuevasSubtareas, subtareaInput.trim()]);
+    setSubtareaInput("");
+  }
+
+  function quitarSubtareaInput(index: number) {
+    setNuevasSubtareas(nuevasSubtareas.filter((_, i) => i !== index));
+  }
+
+  function abrirEdicion(tarea: Tarea) {
+    setEditandoTareaId(tarea.id);
+    setEditTitulo(tarea.titulo);
+    setEditPrioridad(tarea.prioridad);
+    setEditPublica(tarea.publica);
+    setEditDeadline(tarea.deadline || "");
+    setEditSubtareas(tarea.subtareas.map((s) => ({ ...s })));
+    setEditSubtareaInput("");
+    setEditNota(tarea.nota);
+  }
+
+  async function guardarEdicion() {
+    if (!editandoTareaId || !editTitulo.trim()) return;
+    const tarea = tareas.find((t) => t.id === editandoTareaId);
+    if (!tarea) return;
+    const nota = editNota.trim();
+    const subtareas = editSubtareas.map((s, i) => ({ ...s, id: typeof s.id === "number" ? s.id : Date.now() + i }));
+
+    await supabase.from("tareas").update({
+      nombre: editTitulo.trim(),
+      prioridad: editPrioridad,
+      visible_cliente: editPublica,
+      deadline: editDeadline || null,
+      subtareas,
+    }).eq("id", tarea.id);
+
+    const { error: errNota } = await supabase.from("tareas").update({ nota }).eq("id", tarea.id);
+    if (errNota) {
+      const notas = nota
+        ? (tarea.notas.length > 0
+            ? tarea.notas.map((n, i) => (i === 0 ? { ...n, texto: nota, fecha: new Date().toISOString() } : n))
+            : [{ id: Date.now(), texto: nota, fecha: new Date().toISOString() }])
+        : (tarea.notas.length > 0 ? tarea.notas.slice(1) : []);
+      await supabase.from("tareas").update({ notas }).eq("id", tarea.id);
+    }
+
+    setTareas(tareas.map((t) => t.id === tarea.id ? {
+      ...t,
+      titulo: editTitulo.trim(),
+      publica: editPublica,
+      prioridad: editPrioridad,
+      deadline: editDeadline,
+      nota,
+      notas: nota
+        ? (tarea.notas.length > 0
+            ? tarea.notas.map((n, i) => (i === 0 ? { ...n, texto: nota, fecha: new Date().toISOString() } : n))
+            : [{ id: Date.now(), texto: nota, fecha: new Date().toISOString() }])
+        : (tarea.notas.length > 0 ? tarea.notas.slice(1) : []),
+      subtareas,
+    } : t));
+    setEditandoTareaId(null);
+  }
+
+  async function eliminarTarea(id: string) {
+    await supabase.from("tareas").delete().eq("id", id);
+    const nuevasTareas = tareas.filter((t) => t.id !== id);
+    setTareas(nuevasTareas);
+    await supabase.from("proyectos").update({
+      tareas_total: nuevasTareas.length,
+      tareas_completadas: nuevasTareas.filter((t) => t.completada).length,
+    }).eq("id", proyecto.id);
+    setEditandoTareaId(null);
   }
 
   async function agregarSubtarea(tareaId: string) {
@@ -407,6 +487,16 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     setNotas(nuevasNotas);
   }
 
+  async function guardarNotaProyecto(id: number) {
+    const texto = notaProyectoEdit.trim();
+    if (!texto) return;
+    const nuevasNotas = notas.map((n) => n.id === id ? { ...n, texto } : n);
+    await supabase.from("proyectos").update({ notas: nuevasNotas }).eq("id", proyecto.id);
+    setNotas(nuevasNotas);
+    setEditandoNotaId(null);
+    setNotaProyectoEdit("");
+  }
+
   async function aceptarFinalizar() {
     const fecha = new Date().toISOString().split("T")[0];
     await supabase.from("proyectos").update({ estado: "completado", fecha_finalizacion: fecha }).eq("id", proyecto.id);
@@ -421,42 +511,78 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     onVolver();
   }
 
+  const tareaItemProps = {
+    editandoTareaId,
+    setEditandoTareaId,
+    editTitulo,
+    setEditTitulo,
+    editPrioridad,
+    setEditPrioridad,
+    editDeadline,
+    setEditDeadline,
+    editPublica,
+    setEditPublica,
+    editSubtareas,
+    setEditSubtareas,
+    editSubtareaInput,
+    setEditSubtareaInput,
+    editNota,
+    setEditNota,
+    subtareaAbiertaId,
+    setSubtareaAbiertaId,
+    nuevoTituloSubtarea,
+    setNuevoTituloSubtarea,
+    nuevaSubtareaPublica,
+    setNuevaSubtareaPublica,
+    onToggleTarea: toggleTarea,
+    onCambiarEstado: cambiarEstado,
+    onGuardarEdicion: guardarEdicion,
+    onAbrirEdicion: abrirEdicion,
+    onEliminarTarea: eliminarTarea,
+    onAgregarSubtarea: agregarSubtarea,
+    onToggleSubtarea: toggleSubtarea,
+    onEliminarSubtarea: eliminarSubtarea,
+  };
+
   return (
     <div className="p-8">
 
       {modalCarpeta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-white font-medium mb-2">Carpeta ya existe</h3>
-            <p className="text-[#6B7280] text-sm mb-6">
-              Ya existe una carpeta <span className="text-white">"{modalCarpeta.nombre}"</span> dentro de la carpeta del proyecto en Drive.
+          <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-primary font-medium mb-2">Carpeta ya existe</h3>
+            <p className="text-muted text-sm mb-6">
+              Ya existe una carpeta <span className="text-primary">"{modalCarpeta.nombre}"</span> dentro de la carpeta del proyecto en Drive.
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={() => { modalCarpeta.resolve("usar"); setModalCarpeta(null); }}
-                className="w-full bg-[#1A1F2E] border border-[#1DB8A0]/40 text-white text-sm px-4 py-3 rounded-lg hover:bg-[#1DB8A0]/10 transition-colors text-left">
-                <p className="font-medium text-[#1DB8A0]">Usar carpeta existente</p>
-                <p className="text-[#6B7280] text-xs mt-0.5">Vincular la tarea a la carpeta que ya existe</p>
+                className="w-full bg-surface border border-accent/40 text-primary text-sm px-4 py-3 rounded-lg hover:bg-accent/10 transition-colors text-left">
+                <p className="font-medium text-accent">Usar carpeta existente</p>
+                <p className="text-muted text-xs mt-0.5">Vincular la tarea a la carpeta que ya existe</p>
               </button>
               <button onClick={() => { modalCarpeta.resolve("nueva"); setModalCarpeta(null); }}
-                className="w-full bg-[#1A1F2E] border border-[#252B3B] text-white text-sm px-4 py-3 rounded-lg hover:border-[#7C5CBF]/40 transition-colors text-left">
+                className="w-full bg-surface border border-edge text-primary text-sm px-4 py-3 rounded-lg hover:border-violet/40 transition-colors text-left">
                 <p className="font-medium">Crear carpeta nueva</p>
-                <p className="text-[#6B7280] text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
+                <p className="text-muted text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <button onClick={onVolver} className="text-[#6B7280] text-sm hover:text-white mb-6 flex items-center gap-2">
+      <button onClick={onVolver} className="text-muted text-sm hover:text-primary mb-6 flex items-center gap-2">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
         Volver a proyectos
       </button>
 
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h2 className="text-2xl font-bold text-white">{proyecto.nombre}</h2>
+          <div className="flex flex-wrap items-center gap-3 mb-1">
+            <h1 className="text-[26px] font-semibold tracking-tight text-primary">{proyecto.nombre}</h1>
             {finalizado ? (
-              <span className="text-xs px-2 py-1 rounded-full font-medium bg-[#6B7280]/20 text-[#6B7280] border border-[#6B7280]/30">
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray/20 text-muted border border-gray/30">
                 Proyecto finalizado
               </span>
             ) : (
@@ -466,28 +592,32 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
             )}
             {proyecto.folder_url && (
               <button onClick={() => openUrl(proyecto.folder_url!)}
-                className="text-xs bg-[#1DB8A0]/10 border border-[#1DB8A0]/30 text-[#1DB8A0] px-2 py-1 rounded-lg hover:bg-[#1DB8A0]/20">
+                className="text-xs bg-accent/10 border border-accent/30 text-accent px-2 py-1 rounded-lg hover:bg-accent/20">
                 Ver carpeta Drive
               </button>
             )}
           </div>
-          <p className="text-[#6B7280] text-sm">{proyecto.cliente_nombre} · Entrega: {proyecto.deadline}</p>
+          <p className="text-muted text-sm">
+            {proyecto.cliente_nombre}
+            {proyecto.deadline && <> · Entrega: {proyecto.deadline}</>}
+          </p>
           {finalizado && fechaFinalizacion && (
-            <p className="text-[#6B7280] text-xs mt-1">Finalizado el {fechaFinalizacion}</p>
+            <p className="text-muted text-xs mt-1">Finalizado el {fechaFinalizacion}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => openUrl("https://wa.me/" + clienteWhatsapp)}
-            className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
+            disabled={!clienteWhatsapp}
+            className="bg-accent text-onaccent font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
             WhatsApp
           </button>
           <button onClick={() => openUrl("https://calendar.google.com/calendar/r/eventedit?text=Reunion+con+" + proyecto.cliente_nombre)}
-            className="bg-[#7C5CBF] text-white font-medium px-3 py-2 rounded-lg text-sm hover:opacity-90">
-            Agendar reunion
+            className="bg-surface border border-edge text-primary font-medium px-3 py-2 rounded-lg text-sm hover:border-violet/40">
+            Agendar reunión
           </button>
           {!finalizado && (
             <button onClick={() => setConfirmandoEliminar(true)}
-              className="border border-[#F47C5C]/30 text-[#F47C5C] font-medium px-3 py-2 rounded-lg text-sm hover:bg-[#F47C5C]/10">
+              className="border border-coral/30 text-coral font-medium px-3 py-2 rounded-lg text-sm hover:bg-coral/10">
               Eliminar
             </button>
           )}
@@ -495,140 +625,207 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       </div>
 
       {confirmandoEliminar && (
-        <div className="bg-[#F47C5C]/10 border border-[#F47C5C]/30 rounded-xl p-4 mb-6">
-          <p className="text-white text-sm font-medium mb-1">Eliminar proyecto</p>
-          <p className="text-[#6B7280] text-xs mb-3">Esta accion no se puede deshacer. Todos los datos del proyecto se perderan.</p>
+        <div className="bg-coral/10 border border-coral/30 rounded-xl p-4 mb-6">
+          <p className="text-primary text-sm font-medium mb-1">Eliminar proyecto</p>
+          <p className="text-muted text-xs mb-3">Esta accion no se puede deshacer. Todos los datos del proyecto se perderan.</p>
           <div className="flex gap-2">
-            <button onClick={eliminarProyecto} className="bg-[#F47C5C] text-white font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90">
+            <button onClick={eliminarProyecto} className="bg-coral text-white font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90">
               Confirmar eliminacion
             </button>
-            <button onClick={() => setConfirmandoEliminar(false)} className="text-[#6B7280] px-4 py-2 rounded-lg text-sm hover:text-white">
+            <button onClick={() => setConfirmandoEliminar(false)} className="text-muted px-4 py-2 rounded-lg text-sm hover:text-primary">
               Cancelar
             </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
-          <p className="text-[#6B7280] text-xs mb-1">{modo === "fijo" ? "Presupuesto total" : "Tarifa por hora"}</p>
-          <p className="text-2xl font-bold text-white">${presupuesto}{modo === "horas" ? "/hr" : ""}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-canvas border border-edge rounded-xl p-5">
+          <p className="text-muted text-xs mb-1">{modo === "fijo" ? "Presupuesto total" : "Tarifa por hora"}</p>
+          <p className="text-2xl font-bold text-primary">{formatearMoneda(presupuesto, moneda)}{modo === "horas" ? "/hr" : ""}</p>
         </div>
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
-          <p className="text-[#6B7280] text-xs mb-1">Horas trabajadas</p>
-          <p className="text-2xl font-bold text-white">{formatTiempo(totalSegundos)}</p>
+        <div className="bg-canvas border border-edge rounded-xl p-5">
+          <p className="text-muted text-xs mb-1">Horas trabajadas</p>
+          <p className="text-2xl font-bold text-primary">{formatTiempo(totalSegundos)}</p>
         </div>
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
-  <p className="text-[#6B7280] text-xs mb-1">{modo === "fijo" ? "Tarifa real implícita" : "Total acumulado"}</p>
-  <p className="text-2xl font-bold text-[#1DB8A0]">
+        <div className="bg-canvas border border-edge rounded-xl p-5">
+  <p className="text-muted text-xs mb-1">{modo === "fijo" ? "Tarifa real implícita" : "Total acumulado"}</p>
+  <p className="text-2xl font-bold text-accent">
     {modo === "fijo"
       ? totalHoras >= 1
-        ? "$" + Math.round(presupuesto / totalHoras) + "/hr"
+        ? formatearMoneda(Math.round(presupuesto / totalHoras), moneda) + "/hr"
         : "—"
-      : "$" + Math.round(totalHoras * presupuesto)
+      : formatearMoneda(Math.round(totalHoras * presupuesto), moneda)
     }
   </p>
   {modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
-    <p className="text-[#6B7280] text-xs mt-1">Disponible desde 1h registrada</p>
+    <p className="text-muted text-xs mt-1">Disponible desde 1h registrada</p>
   )}
 </div>
       </div>
 
-      <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-6">
-        <div className="flex justify-between items-center mb-2">
-          <p className="text-white font-medium">Progreso general</p>
-          <div className="flex items-center gap-3">
-            <p className="text-[#6B7280] text-sm">{completadas}/{tareas.length} tareas · {progreso}%</p>
+      <div className="bg-canvas border border-edge rounded-xl p-5 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="relative w-16 h-16 flex-shrink-0">
+              <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#1A1F2E" strokeWidth="3.5" />
+                <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#1DB8A0" strokeWidth="3.5"
+                  strokeLinecap="round" strokeDasharray={`${progreso} 100`}
+                  className="transition-all duration-500" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-primary text-sm font-semibold">{progreso}%</span>
+            </div>
+            <div>
+              <p className="text-primary font-medium text-[15px]">Progreso del proyecto</p>
+              <p className="text-muted text-sm mt-0.5">{completadas}/{tareas.length} tareas completadas</p>
+              {!finalizado && todasCompletadas && (
+                <p className="text-accent text-xs mt-0.5 font-medium">✓ Todas las tareas listas</p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             {!finalizado && todasCompletadas && !confirmandoFinalizar && (
               <button onClick={() => setConfirmandoFinalizar(true)}
-                className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
+                className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90">
                 Finalizar proyecto
               </button>
             )}
             {!finalizado && confirmandoFinalizar && (
-              <div className="flex items-center gap-2">
-                <p className="text-[#6B7280] text-xs">Confirmas que el proyecto esta listo?</p>
+              <>
+                <p className="text-muted text-xs">Confirmas que el proyecto esta listo?</p>
                 <button onClick={aceptarFinalizar}
-                  className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
+                  className="bg-accent text-onaccent font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
                   Aceptar
                 </button>
                 <button onClick={() => setConfirmandoFinalizar(false)}
-                  className="text-[#6B7280] px-3 py-1.5 rounded-lg text-xs hover:text-white">
+                  className="text-muted px-3 py-1.5 rounded-lg text-xs hover:text-primary">
                   Cancelar
                 </button>
-              </div>
+              </>
             )}
             {finalizado && (
               <button onClick={() => onGenerarFactura && onGenerarFactura(proyecto.id)}
-                className="bg-[#7C5CBF] text-white font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
-                Generar factura
+                className="bg-violet text-white font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90">
+                Generar comprobante
               </button>
             )}
           </div>
         </div>
-        <div className="w-full bg-[#1A1F2E] rounded-full h-2">
+        <div className="mt-4 h-2.5 w-full bg-surface rounded-full overflow-hidden">
           <div
-            className={"h-2 rounded-full transition-all " + (finalizado ? "bg-[#6B7280]" : "bg-[#1DB8A0]")}
+            className={"h-full rounded-full transition-all duration-500 " + (finalizado ? "bg-gray" : "bg-gradient-to-r from-accent to-accent2")}
             style={{ width: progreso + "%" }}
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
 
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
+        <div className="bg-canvas border border-edge rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-medium">Tareas</h3>
-            {!finalizado && (
-              <button onClick={() => setMostrarFormTarea(!mostrarFormTarea)}
-                className="text-[#1DB8A0] text-xs border border-[#1DB8A0]/30 px-3 py-1.5 rounded-lg hover:bg-[#1DB8A0]/10">
-                + Nueva
-              </button>
-            )}
+            <h3 className="text-primary font-medium">Tareas</h3>
+            <div className="flex items-center gap-3">
+              {!finalizado && (
+                <button onClick={() => setMostrarFormTarea(!mostrarFormTarea)}
+                  className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10">
+                  + Nueva
+                </button>
+              )}
+            </div>
           </div>
 
           {mostrarFormTarea && (
-            <div className="bg-[#1A1F2E] border border-[#252B3B] rounded-lg p-3 mb-4">
+            <div className="bg-surface border border-edge rounded-lg p-3 mb-4">
               <input value={nuevoTitulo} onChange={(e) => setNuevoTitulo(e.target.value)}
                 placeholder="Titulo de la tarea"
-                className="w-full bg-[#141824] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0] mb-3" />
-              <div className="flex items-center gap-3 mb-3">
-                <select value={nuevaPrioridad} onChange={(e) => setNuevaPrioridad(e.target.value as "alta" | "media" | "baja")}
-                  className="bg-[#141824] border border-[#252B3B] rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#1DB8A0]">
-                  <option value="alta">Alta</option>
-                  <option value="media">Media</option>
-                  <option value="baja">Baja</option>
-                </select>
-                <label className="flex items-center gap-2 text-[#6B7280] text-xs cursor-pointer">
-                  <input type="checkbox" checked={nuevaPublica} onChange={(e) => setNuevaPublica(e.target.checked)} className="accent-[#1DB8A0]" />
-                  Visible al cliente
-                </label>
+                className="w-full bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent mb-3" />
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
+                  {(["alta", "media", "baja"] as const).map((p) => (
+                    <button key={p} type="button" onClick={() => setNuevaPrioridad(p)}
+                      className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
+                        (nuevaPrioridad === p ? prioridadConfig[p].color : "text-muted hover:text-primary")}>
+                      {prioridadConfig[p].label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setNuevaPublica(!nuevaPublica)}
+                  className={"flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium " +
+                    (nuevaPublica
+                      ? "bg-accent/10 border-accent/40 text-accent"
+                      : "bg-surface border-edge text-muted hover:text-primary")}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                    {nuevaPublica ? (
+                      <>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </>
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    )}
+                  </svg>
+                  {nuevaPublica ? "Visible al cliente" : "Oculta para el cliente"}
+                </button>
               </div>
 
               {hayDrive && (
                 proyectoTieneCarpeta ? (
-                  <div className="flex items-center gap-2 mb-3 bg-[#141824] border border-[#252B3B] rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 mb-3 bg-canvas border border-edge rounded-lg px-3 py-2">
                     <input type="checkbox" id="checkbox-drive-tarea"
                       checked={crearCarpetaTarea}
                       onChange={(e) => setCrearCarpetaTarea(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-[#1DB8A0] cursor-pointer" />
+                      className="w-3.5 h-3.5 accent-accent cursor-pointer" />
                     <label htmlFor="checkbox-drive-tarea" className="cursor-pointer">
-                      <p className="text-[#6B7280] text-xs">Crear carpeta en Drive para esta tarea <span className="text-[#6B7280]">(opcional)</span></p>
+                      <p className="text-muted text-xs">Crear carpeta en Drive para esta tarea <span className="text-muted">(opcional)</span></p>
                     </label>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 mb-3 bg-[#141824] border border-[#252B3B] rounded-lg px-3 py-2 opacity-50">
-                    <div className="w-3.5 h-3.5 rounded border border-[#252B3B] flex-shrink-0" />
-                    <p className="text-[#6B7280] text-xs">El proyecto no tiene carpeta en Drive</p>
+                  <div className="flex items-center gap-2 mb-3 bg-canvas border border-edge rounded-lg px-3 py-2 opacity-50">
+                    <div className="w-3.5 h-3.5 rounded border border-edge flex-shrink-0" />
+                    <p className="text-muted text-xs">El proyecto no tiene carpeta en Drive</p>
                   </div>
                 )
               )}
 
+              <div className="mb-3">
+                <p className="text-muted text-xs mb-2">Subtareas</p>
+                <div className="flex gap-2 mb-2">
+                  <input value={subtareaInput} onChange={(e) => setSubtareaInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarSubtareaInput(); } }}
+                    placeholder="Subtarea de la tarea..."
+                    className="flex-1 bg-canvas border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
+                  <button type="button" onClick={agregarSubtareaInput}
+                    className="bg-surface border border-edge text-primary text-xs font-medium px-3 py-1.5 rounded-lg hover:border-accent/40">
+                    Agregar
+                  </button>
+                </div>
+                {nuevasSubtareas.length > 0 && (
+                  <div className="space-y-1">
+                    {nuevasSubtareas.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-canvas border border-edge rounded-lg px-3 py-1.5">
+                        <p className="text-primary text-xs flex-1">{s}</p>
+                        <button type="button" onClick={() => quitarSubtareaInput(i)}
+                          className="text-muted text-xs hover:text-coral">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <p className="text-muted text-xs mb-2">Nota</p>
+                <textarea value={nuevaNotaTarea} onChange={(e) => setNuevaNotaTarea(e.target.value)}
+                  placeholder="Escribe una nota para esta tarea (opcional)..."
+                  rows={2}
+                  className="w-full bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-xs focus:outline-none focus:border-accent resize-none" />
+              </div>
+
               <div className="flex gap-2">
-                <button onClick={agregarTarea} className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
+                <button onClick={agregarTarea} className="bg-accent text-onaccent font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
                   Guardar
                 </button>
-                <button onClick={() => setMostrarFormTarea(false)} className="text-[#6B7280] px-3 py-1.5 rounded-lg text-xs hover:text-white">
+                <button onClick={() => { setMostrarFormTarea(false); setNuevaNotaTarea(""); setNuevasSubtareas([]); setSubtareaInput(""); }} className="text-muted px-3 py-1.5 rounded-lg text-xs hover:text-primary">
                   Cancelar
                 </button>
               </div>
@@ -637,129 +834,28 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
 
           <div className="space-y-3">
             {tareas.map((tarea) => (
-              <div key={tarea.id} className="border-b border-[#252B3B] last:border-0 pb-3 last:pb-0">
-                <div className="flex items-center gap-3">
-                  <input type="checkbox" checked={tarea.completada} onChange={() => toggleTarea(tarea.id)}
-                    disabled={finalizado} className="w-4 h-4 accent-[#1DB8A0] cursor-pointer flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className={"text-sm truncate " + (tarea.completada ? "line-through text-[#6B7280]" : "text-white")}>
-                      {tarea.titulo}
-                    </p>
-                    {tarea.subtareas.length > 0 && (
-                      <p className="text-[#6B7280] text-xs mt-0.5">
-                        {tarea.subtareas.filter((s) => s.completada).length}/{tarea.subtareas.length} subtareas
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {tarea.aprobada_cliente && (
-                      <span className="text-[#1DB8A0] text-xs bg-[#1DB8A0]/10 px-2 py-0.5 rounded-full font-medium">✓ Aprobada</span>
-                    )}
-                    {tarea.folder_url && (
-                      <button onClick={() => openUrl(tarea.folder_url!)} className="text-[#1DB8A0] text-xs hover:underline">📁</button>
-                    )}
-                    {tarea.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
-                    <span className={"text-xs px-2 py-0.5 rounded-full " + prioridadConfig[tarea.prioridad].color}>
-                      {prioridadConfig[tarea.prioridad].label}
-                    </span>
-                    {!finalizado && (
-                      <button onClick={() => { setNotaTareaId(notaTareaId === tarea.id ? null : tarea.id); setNuevaNota(tarea.nota); }}
-                        className="text-[#6B7280] text-xs hover:text-[#1DB8A0]">
-                        {tarea.nota ? "Ver nota" : "+ Nota"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {tarea.nota && notaTareaId !== tarea.id && (
-                  <div className="mt-2 ml-7 bg-[#1A1F2E] rounded-lg px-3 py-2">
-                    <p className="text-[#6B7280] text-xs">{tarea.nota}</p>
-                  </div>
-                )}
-
-                {notaTareaId === tarea.id && (
-                  <div className="mt-2 ml-7">
-                    <textarea value={nuevaNota} onChange={(e) => setNuevaNota(e.target.value)}
-                      placeholder="Escribe una nota para esta tarea..." rows={2}
-                      className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#1DB8A0] resize-none mb-2" />
-                    <div className="flex gap-2">
-                      <button onClick={() => guardarNotaTarea(tarea.id, nuevaNota)}
-                        className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">Guardar</button>
-                      <button onClick={() => { setNotaTareaId(null); setNuevaNota(""); }}
-                        className="text-[#6B7280] px-3 py-1 rounded-lg text-xs hover:text-white">Cancelar</button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-2 ml-7">
-                  {tarea.subtareas.length > 0 && (
-                    <div className="space-y-1 mb-2">
-                      {tarea.subtareas.map((sub) => (
-                        <div key={sub.id} className="flex items-center gap-2 group">
-                          <input type="checkbox" checked={sub.completada}
-                            onChange={() => toggleSubtarea(tarea.id, sub.id)}
-                            disabled={finalizado}
-                            className="w-3 h-3 accent-[#1DB8A0] cursor-pointer flex-shrink-0" />
-                          <p className={"text-xs flex-1 " + (sub.completada ? "line-through text-[#6B7280]" : "text-[#8B93A8]")}>{sub.titulo}</p>
-                          {sub.publica && <span className="text-[#1DB8A0] text-xs">👁</span>}
-                          {!finalizado && (
-                            <button onClick={() => eliminarSubtarea(tarea.id, sub.id)}
-                              className="text-[#6B7280] text-xs hover:text-[#F47C5C] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {!finalizado && (
-                    subtareaAbiertaId === tarea.id ? (
-                      <div className="flex flex-col gap-2 mt-1">
-                        <input value={nuevoTituloSubtarea} onChange={(e) => setNuevoTituloSubtarea(e.target.value)}
-                          placeholder="Título de la subtarea"
-                          className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#1DB8A0]" />
-                        <div className="flex items-center justify-between">
-                          <label className="flex items-center gap-2 text-[#6B7280] text-xs cursor-pointer">
-                            <input type="checkbox" checked={nuevaSubtareaPublica}
-                              onChange={(e) => setNuevaSubtareaPublica(e.target.checked)}
-                              className="w-3 h-3 accent-[#1DB8A0]" />
-                            Visible al cliente
-                          </label>
-                          <div className="flex gap-2">
-                            <button onClick={() => agregarSubtarea(tarea.id)}
-                              className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">Guardar</button>
-                            <button onClick={() => { setSubtareaAbiertaId(null); setNuevoTituloSubtarea(""); setNuevaSubtareaPublica(false); }}
-                              className="text-[#6B7280] px-2 py-1 rounded-lg text-xs hover:text-white">Cancelar</button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <button onClick={() => setSubtareaAbiertaId(tarea.id)}
-                        className="text-[#6B7280] text-xs hover:text-[#1DB8A0] mt-1">+ Subtarea</button>
-                    )
-                  )}
-                </div>
-              </div>
+              <TareaItem key={tarea.id} tarea={tarea} deshabilitado={finalizado} {...tareaItemProps} />
             ))}
           </div>
         </div>
 
         {/* Tiempo registrado — agrupado por tarea */}
-        <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
+        <div className="bg-canvas border border-edge rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-medium">Tiempo registrado</h3>
-            <span className="text-[#1DB8A0] text-sm font-medium">{formatTiempo(totalSegundos)} total</span>
+            <h3 className="text-primary font-medium">Tiempo registrado</h3>
+            <span className="text-accent text-sm font-medium">{formatTiempo(totalSegundos)} total</span>
           </div>
           <div className="space-y-2">
             {registrosMostrados.length === 0 && (
-              <p className="text-[#6B7280] text-sm">Sin registros de tiempo aún.</p>
+              <p className="text-muted text-sm">Sin registros de tiempo aún.</p>
             )}
             {registrosMostrados.map((registro) => (
-              <div key={registro.id} className="flex items-center justify-between py-2 border-b border-[#252B3B] last:border-0">
+              <div key={registro.id} className="flex items-center justify-between py-2 border-b border-edge last:border-0">
                 <div>
-                  <p className="text-white text-sm">{registro.descripcion}</p>
-                  <p className="text-[#6B7280] text-xs mt-0.5">Tiempo total acumulado</p>
+                  <p className="text-primary text-sm">{registro.descripcion}</p>
+                  <p className="text-muted text-xs mt-0.5">Tiempo total acumulado</p>
                 </div>
-                <span className="text-[#1DB8A0] font-mono text-sm font-medium">{formatTiempo(registro.duracion)}</span>
+                <span className="text-accent font-mono text-sm font-medium">{formatTiempo(registro.duracion)}</span>
               </div>
             ))}
           </div>
@@ -767,12 +863,14 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
 
       </div>
 
-      <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5 mb-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+
+      <div className="bg-canvas border border-edge rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-medium">Notas del proyecto</h3>
+          <h3 className="text-primary font-medium">Notas del proyecto</h3>
           {!finalizado && (
             <button onClick={() => setMostrarFormNota(!mostrarFormNota)}
-              className="text-[#1DB8A0] text-xs border border-[#1DB8A0]/30 px-3 py-1.5 rounded-lg hover:bg-[#1DB8A0]/10">
+              className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10">
               + Nueva nota
             </button>
           )}
@@ -782,48 +880,68 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           <div className="mb-4">
             <textarea value={nuevaNotaProyecto} onChange={(e) => setNuevaNotaProyecto(e.target.value)}
               placeholder="Escribe una nota sobre este proyecto..." rows={3}
-              className="w-full bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#1DB8A0] resize-none mb-2" />
+              className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent resize-none mb-2" />
             <div className="flex gap-2">
               <button onClick={agregarNotaProyecto}
-                className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90">Guardar nota</button>
+                className="bg-accent text-onaccent font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90">Guardar nota</button>
               <button onClick={() => setMostrarFormNota(false)}
-                className="text-[#6B7280] px-4 py-1.5 rounded-lg text-xs hover:text-white">Cancelar</button>
+                className="text-muted px-4 py-1.5 rounded-lg text-xs hover:text-primary">Cancelar</button>
             </div>
           </div>
         )}
 
-        {notas.length === 0 && !mostrarFormNota && <p className="text-[#6B7280] text-sm">Sin notas aun</p>}
+        {notas.length === 0 && !mostrarFormNota && <p className="text-muted text-sm">Sin notas aun</p>}
 
         <div className="space-y-3">
           {notas.map((nota) => (
-            <div key={nota.id} className="bg-[#1A1F2E] rounded-lg px-4 py-3 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-white text-sm">{nota.texto}</p>
-                <p className="text-[#6B7280] text-xs mt-1">{nota.fecha}</p>
-              </div>
-              {!finalizado && (
-                <button onClick={() => eliminarNotaProyecto(nota.id)}
-                  className="text-[#6B7280] text-xs hover:text-[#F47C5C] flex-shrink-0">Eliminar</button>
+            <div key={nota.id} className="bg-surface rounded-lg px-4 py-3">
+              {editandoNotaId === nota.id ? (
+                <div>
+                  <textarea value={notaProyectoEdit} onChange={(e) => setNotaProyectoEdit(e.target.value)} rows={2}
+                    placeholder="Escribe una nota sobre este proyecto..."
+                    className="w-full bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent resize-none mb-2" />
+                  <div className="flex gap-2">
+                    <button onClick={() => guardarNotaProyecto(nota.id)}
+                      className="bg-accent text-onaccent font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">Guardar</button>
+                    <button onClick={() => { setEditandoNotaId(null); setNotaProyectoEdit(""); }}
+                      className="text-muted px-3 py-1.5 rounded-lg text-xs hover:text-primary">Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-primary text-sm">{nota.texto}</p>
+                    <p className="text-muted text-xs mt-1">{nota.fecha}</p>
+                  </div>
+                  {!finalizado && (
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <button onClick={() => { setEditandoNotaId(nota.id); setNotaProyectoEdit(nota.texto); }}
+                        className="text-muted text-xs hover:text-accent">Editar</button>
+                      <button onClick={() => eliminarNotaProyecto(nota.id)}
+                        className="text-muted text-xs hover:text-coral">Eliminar</button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="bg-[#141824] border border-[#252B3B] rounded-xl p-5">
+      <div className="bg-canvas border border-edge rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-white font-medium">Actividad del cliente</h3>
-            <p className="text-[#6B7280] text-xs mt-0.5">Mensajes, feedbacks y aprobaciones desde el portal</p>
+            <h3 className="text-primary font-medium">Actividad del cliente</h3>
+            <p className="text-muted text-xs mt-0.5">Mensajes, feedbacks y aprobaciones desde el portal</p>
           </div>
           <div className="flex items-center gap-3">
             {tareasAprobadas > 0 && (
-              <span className="text-[#1DB8A0] text-xs bg-[#1DB8A0]/10 px-2 py-1 rounded-lg">
+              <span className="text-accent text-xs bg-accent/10 px-2 py-1 rounded-lg">
                 {tareasAprobadas} tarea{tareasAprobadas > 1 ? "s" : ""} aprobada{tareasAprobadas > 1 ? "s" : ""}
               </span>
             )}
             {feedbacks.length > 0 && (
-              <span className="text-[#7C5CBF] text-xs bg-[#7C5CBF]/10 px-2 py-1 rounded-lg">
+              <span className="text-violet text-xs bg-violet/10 px-2 py-1 rounded-lg">
                 {feedbacks.length} feedback{feedbacks.length > 1 ? "s" : ""}
               </span>
             )}
@@ -831,7 +949,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
         </div>
 
         {mensajesPortal.length === 0 ? (
-          <p className="text-[#6B7280] text-sm">Sin actividad del cliente aún.</p>
+          <p className="text-muted text-sm">Sin actividad del cliente aún.</p>
         ) : (
           <div className="space-y-2 mb-4 max-h-72 overflow-y-auto">
             {mensajesPortal.map((msg) => {
@@ -841,17 +959,17 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
               return (
                 <div key={msg.id} className={"flex gap-3 " + (esCliente ? "" : "flex-row-reverse")}>
                   <div className={"flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold " +
-                    (esCliente ? "bg-[#7C5CBF]/20 text-[#7C5CBF]" : "bg-[#1DB8A0]/20 text-[#1DB8A0]")}>
+                    (esCliente ? "bg-violet/20 text-violet" : "bg-accent/20 text-accent")}>
                     {esCliente ? "C" : "F"}
                   </div>
                   <div className={"max-w-[75%] " + (esCliente ? "" : "text-right")}>
                     <div className={"rounded-xl px-3 py-2 " +
-                      (esAprobacion ? "bg-[#1DB8A0]/10 border border-[#1DB8A0]/30" :
-                       esFeedback ? "bg-[#7C5CBF]/10 border border-[#7C5CBF]/30" :
-                       esCliente ? "bg-[#252B3B]" : "bg-[#1DB8A0]/10 border border-[#1DB8A0]/30")}>
-                      <p className="text-white text-xs">{msg.contenido}</p>
+                      (esAprobacion ? "bg-accent/10 border border-accent/30" :
+                       esFeedback ? "bg-violet/10 border border-violet/30" :
+                       esCliente ? "bg-edge" : "bg-accent/10 border border-accent/30")}>
+                      <p className="text-primary text-xs">{msg.contenido}</p>
                     </div>
-                    <p className="text-[#6B7280] text-xs mt-1">{formatFecha(msg.creado_en)}</p>
+                    <p className="text-muted text-xs mt-1">{formatFecha(msg.creado_en)}</p>
                   </div>
                 </div>
               );
@@ -859,21 +977,23 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
           </div>
         )}
 
-        <div className="flex gap-2 pt-3 border-t border-[#252B3B]">
+        <div className="flex gap-2 pt-3 border-t border-edge">
           <textarea
             value={respuesta}
             onChange={(e) => setRespuesta(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarRespuesta(); } }}
             placeholder="Responder al cliente desde el portal..."
             rows={2}
-            className="flex-1 bg-[#1A1F2E] border border-[#252B3B] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#1DB8A0] resize-none"
+            className="flex-1 bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-xs focus:outline-none focus:border-accent resize-none"
           />
           <button onClick={enviarRespuesta} disabled={!respuesta.trim() || enviandoRespuesta}
-            className="bg-[#1DB8A0] text-[#1A1F2E] font-medium px-4 py-2 rounded-lg text-xs hover:opacity-90 disabled:opacity-50 self-end">
+            className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-xs hover:opacity-90 disabled:opacity-50 self-end">
             {enviandoRespuesta ? "..." : "Enviar"}
           </button>
         </div>
-        <p className="text-[#6B7280] text-xs mt-1">Enter para enviar · El cliente lo verá en su portal</p>
+        <p className="text-muted text-xs mt-1">Enter para enviar · El cliente lo verá en su portal</p>
+      </div>
+
       </div>
 
     </div>
