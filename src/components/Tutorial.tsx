@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { marcarNovedadesVista } from "./Novedades";
 
@@ -14,144 +16,106 @@ interface Paso {
   color: string;
 }
 
-const pasos: Paso[] = [
+function getPasos(t: TFunction): Paso[] {
+  return [
   {
     id: "bienvenida",
     tipo: "modal",
-    titulo: "Bienvenido a Flowo",
+    titulo: t("tutorial.pasos.bienvenida.titulo"),
     emoji: "👋",
     color: "#1DB8A0",
-    descripcion: [
-      "El lugar donde tu negocio freelance por fin funciona como debe.",
-      "Clientes, proyectos, tiempo, comprobantes y tu portal profesional — todo conectado en un solo flujo.",
-      "Esta guía te lleva por lo esencial en menos de 2 minutos. ¡Vamos allá!",
-    ],
+    descripcion: t("tutorial.pasos.bienvenida.desc", { returnObjects: true }) as string[],
   },
   {
     id: "perfil",
     tipo: "modal",
-    titulo: "Tu perfil profesional",
+    titulo: t("tutorial.pasos.perfil.titulo"),
     emoji: "🧑‍💼",
     color: "#7C5CBF",
-    descripcion: [
-      "Ve a Perfil y completa tu información: nombre, WhatsApp con indicador de país sin el +, y tu marca personal.",
-      "Sube tu logotipo — aparece automáticamente en todos tus comprobantes PDF.",
-      "Conecta tu Google Drive para crear carpetas de clientes y proyectos sin salir de la app.",
-      "Crea tu catálogo de servicios con tus tarifas base. Se autocompletan al crear un proyecto.",
-    ],
+    descripcion: t("tutorial.pasos.perfil.desc", { returnObjects: true }) as string[],
   },
   {
     id: "clientes",
     tipo: "spotlight",
     sidebarItem: "clientes",
-    titulo: "Gestión de clientes",
+    titulo: t("tutorial.pasos.clientes.titulo"),
     emoji: "👥",
     color: "#1DB8A0",
-    descripcion: [
-      "Agrega clientes con el botón Nueva cliente. Registra su WhatsApp con indicador de país sin el + y su correo.",
-      "Desde el perfil de cada cliente puedes enviarle un WhatsApp directo, compartir su portal personalizado (avance del proyecto, tareas, pagos y mensajes), agendar una reunión en Google Meet o agregar notas privadas.",
-      "Si tienes Google Drive conectado, puedes vincular o crear su carpeta en la nube desde aquí.",
-    ],
+    descripcion: t("tutorial.pasos.clientes.desc", { returnObjects: true }) as string[],
   },
   {
     id: "cotizaciones",
     tipo: "spotlight",
     sidebarItem: "cotizaciones",
-    titulo: "Cotizaciones profesionales",
+    titulo: t("tutorial.pasos.cotizaciones.titulo"),
     emoji: "📄",
     color: "#F47C5C",
-    descripcion: [
-      "Crea una cotización en minutos: elige servicios de tu catálogo, ajusta precios, validez y tus políticas.",
-      "Envíala a tu cliente por WhatsApp o correo; él la ve y la responde desde su portal.",
-      "Al aprobarla, puedes generar la factura o el contrato con un clic.",
-    ],
+    descripcion: t("tutorial.pasos.cotizaciones.desc", { returnObjects: true }) as string[],
   },
   {
     id: "contratos",
     tipo: "spotlight",
     sidebarItem: "contratos",
-    titulo: "Firma de contratos en línea",
+    titulo: t("tutorial.pasos.contratos.titulo"),
     emoji: "✍️",
     color: "#7C5CBF",
-    descripcion: [
-      "Crea un contrato y envía a tu cliente un enlace corto por WhatsApp o correo.",
-      "Tu cliente lo firma escribiendo su nombre (o dibujando su firma) desde el navegador, sin instalar nada.",
-      "Recibes una notificación al instante y el contrato queda con firma y fecha reales, listo para descargar en PDF.",
-      "Si el cliente aún no tiene cuenta, Flowo la crea automáticamente al firmar.",
-    ],
+    descripcion: t("tutorial.pasos.contratos.desc", { returnObjects: true }) as string[],
   },
   {
     id: "proyectos",
     tipo: "spotlight",
     sidebarItem: "proyectos",
-    titulo: "Proyectos en control total",
+    titulo: t("tutorial.pasos.proyectos.titulo"),
     emoji: "📁",
     color: "#7C5CBF",
-    descripcion: [
-      "Crea proyectos seleccionando un cliente, definiendo fechas y cargando tus servicios personalizados en un clic.",
-      "Dentro de cada proyecto agrega tareas con subtareas, define si el cliente puede verlas o no, y asigna carpetas de Drive por tarea.",
-      "Recibe feedback directo del cliente, registra ingresos por precio fijo o por horas, y agenda reuniones — todo sin salir de la app.",
-    ],
+    descripcion: t("tutorial.pasos.proyectos.desc", { returnObjects: true }) as string[],
   },
   {
     id: "tareas",
     tipo: "spotlight",
     sidebarItem: "tareas",
-    titulo: "Vista dedicada de tareas",
+    titulo: t("tutorial.pasos.tareas.titulo"),
     emoji: "✅",
     color: "#1DB8A0",
-    descripcion: [
-      "Una vista centralizada con todas tus tareas de todos los proyectos.",
-      "Misma potencia que dentro del proyecto pero con una pestaña dedicada para cuando necesitas ver el panorama completo.",
-      "Filtra por proyecto, prioridad o estado para enfocarte en lo que importa hoy.",
-    ],
+    descripcion: t("tutorial.pasos.tareas.desc", { returnObjects: true }) as string[],
   },
   {
     id: "timer",
     tipo: "spotlight",
     sidebarItem: "timer",
-    titulo: "Tu tiempo vale dinero",
+    titulo: t("tutorial.pasos.timer.titulo"),
     emoji: "⏱️",
     color: "#1DB8A0",
-    descripcion: [
-      "Si trabajas por horas, el timer es tu mejor aliado. Selecciona proyecto y tarea, inicia y listo.",
-      "Al guardar, el tiempo queda registrado automáticamente vinculado al cliente, proyecto y tarea.",
-      "El Pomodoro te ayuda a gestionar tu energía con bloques de trabajo y pausas — no registra tiempo, pero te mantiene en flow.",
-    ],
+    descripcion: t("tutorial.pasos.timer.desc", { returnObjects: true }) as string[],
   },
   {
     id: "facturas",
     tipo: "spotlight",
     sidebarItem: "facturas",
-    titulo: "Comprobantes que se hacen solos",
+    titulo: t("tutorial.pasos.facturas.titulo"),
     emoji: "🧾",
     color: "#F47C5C",
-    descripcion: [
-      "Olvídate de armar comprobantes manualmente. Todo lo que registres en Flowo se agrega automáticamente.",
-      "Selecciona el proyecto y el comprobante se llena solo con los conceptos, horas y tareas realizadas.",
-      "Descárgala en PDF con tu logo, envíala por email o WhatsApp, y registra abonos o pagos completos.",
-    ],
+    descripcion: t("tutorial.pasos.facturas.desc", { returnObjects: true }) as string[],
   },
   {
     id: "dashboard",
     tipo: "spotlight",
     sidebarItem: "dashboard",
-    titulo: "Tu negocio de un vistazo",
+    titulo: t("tutorial.pasos.dashboard.titulo"),
     emoji: "📊",
     color: "#7C5CBF",
-    descripcion: [
-      "El Dashboard es tu punto de partida diario. Tareas completadas, en proceso y las más urgentes.",
-      "Un resumen ejecutivo de todo lo que está pasando en tu negocio freelance — sin abrir nada más.",
-      "Flowo está listo. Ahora es tu turno. ¡A generar comprobantes!",
-    ],
+    descripcion: t("tutorial.pasos.dashboard.desc", { returnObjects: true }) as string[],
   },
 ];
+}
 
 interface TutorialProps {
   onTerminar: () => void;
 }
 
 export default function Tutorial({ onTerminar }: TutorialProps) {
+  const { t } = useTranslation();
+  const pasos = getPasos(t);
   const [paso, setPaso] = useState(0);
   const [spotlightPos, setSpotlightPos] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [visible, setVisible] = useState(false);
@@ -287,14 +251,14 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
                   onClick={anterior}
                   className="text-muted text-sm hover:text-primary transition-colors"
                 >
-                  ← Anterior
+                  ← {t("tutorial.anterior")}
                 </button>
               )}
               <button
                 onClick={terminar}
                 className="text-muted text-xs hover:text-primary transition-colors"
               >
-                Saltar guía
+                {t("tutorial.saltarGuia")}
               </button>
             </div>
             <button
@@ -302,13 +266,13 @@ export default function Tutorial({ onTerminar }: TutorialProps) {
               className="px-6 py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-90"
               style={{ backgroundColor: pasoActual.color, color: pasoActual.color === "#F47C5C" ? "white" : "#1A1F2E" }}
             >
-              {esUltimo ? "¡Empezar a usar Flowo!" : "Siguiente →"}
+              {esUltimo ? t("tutorial.empezar") : t("tutorial.siguiente")}
             </button>
           </div>
 
           {/* Contador */}
           <p className="text-center text-muted text-xs mt-4">
-            {paso + 1} de {pasos.length}
+            {t("tutorial.contador", { actual: paso + 1, total: pasos.length })}
           </p>
 
         </div>

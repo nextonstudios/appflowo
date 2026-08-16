@@ -1046,7 +1046,7 @@ dependencies = [
 
 [[package]]
 name = "flowo"
-version = "1.1.0"
+version = "1.2.2"
 dependencies = [
  "serde",
  "serde_json",

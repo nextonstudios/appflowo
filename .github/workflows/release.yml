@@ -1,91 +1,153 @@
-name: Release Flowo
+name: Build & Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   release:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-          - platform: ubuntu-22.04
-            args: ''
           - platform: windows-latest
-            args: ''
+            target: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
-      - name: Install Rust
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build Tauri app
+      - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
-          VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.VITE_GOOGLE_CLIENT_SECRET }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Flowo ${{ github.ref_name }}'
-          releaseBody: 'Nueva versión de Flowo'
+          releaseName: "Flowo ${{ github.ref_name }}"
+          releaseBody: "Ver CHANGELOG.md"
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
 
   update-gist:
     needs: release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Download release assets info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
 
-      - name: Get version from tauri.conf.json
-        id: version
-        run: |
-          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+            const assets = release.data.assets;
+            const tag = release.data.tag_name;
+            const published = release.data.published_at;
+
+            // Map updater artifacts by platform
+            const platforms = {};
+
+            for (const asset of assets) {
+              const name = asset.name;
+              const url = asset.browser_download_url;
+
+              let platformKey = null;
+              let sigUrl = null;
+
+              if (name.endsWith('-x64-setup.exe')) {
+                platformKey = 'windows-x86_64';
+                sigUrl = url + '.sig';
+              } else if (name.endsWith('.app.tar.gz') && !name.includes('x86_64')) {
+                platformKey = 'darwin-aarch64';
+                sigUrl = url + '.sig';
+              } else if (name.endsWith('.AppImage.tar.gz')) {
+                platformKey = 'linux-x86_64';
+                sigUrl = url + '.sig';
+              }
+
+              if (platformKey && !platforms[platformKey]) {
+                let signature = '';
+                if (sigUrl) {
+                  try {
+                    const sigAsset = assets.find(a => a.browser_download_url === sigUrl);
+                    if (sigAsset) {
+                      const resp = await github.rest.repos.getReleaseAsset({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        asset_id: sigAsset.id,
+                        headers: { accept: 'application/octet-stream' }
+                      });
+                      signature = Buffer.from(resp.data).toString('utf8').trim();
+                    }
+                  } catch (e) {
+                    console.log(`No signature for ${name}: ${e.message}`);
+                  }
+                }
+
+                platforms[platformKey] = { url, signature };
+              }
+            }
+
+            const manifest = {
+              version: tag.replace('v', ''),
+              notes: release.data.body || `Actualización a ${tag}`,
+              pub_date: published,
+              platforms
+            };
+
+            console.log(JSON.stringify(manifest, null, 2));
+
+            // Write manifest
+            const fs = require('fs');
+            fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2));
 
       - name: Update Gist
+        uses: actions/github-script@v7
         env:
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          CONTENT="{\"version\": \"${VERSION}\"}"
-          curl -s -X PATCH \
-            -H "Authorization: token $GIST_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"files\":{\"gistfile1.txt\":{\"content\":$(echo $CONTENT | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}}}" \
-            "https://api.github.com/gists/f40304340ffbfe1411d22db21d135d9c"
+          GIST_ID: f40304340ffbfe1411d22db21d135d9c
+        with:
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync('manifest.json', 'utf8');
+            const gistId = process.env.GIST_ID;
+
+            try {
+              await github.rest.gists.get({ gist_id: gistId });
+              await github.rest.gists.update({
+                gist_id: gistId,
+                files: { 'gistfile1.txt': { content } }
+              });
+              console.log('Gist updated successfully');
+            } catch (e) {
+              console.log(`Gist update failed: ${e.message}`);
+            }

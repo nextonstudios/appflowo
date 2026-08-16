@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import jsPDF from "jspdf";
@@ -44,28 +46,22 @@ interface Contrato {
   abierta: boolean;
 }
 
-const CLAUSULAS_DEFECTO: Clausulas = {
-  formaPago: "El pago se realizará según lo acordado entre las partes antes de iniciar el trabajo.",
-  entrega: "Los plazos de entrega se acuerdan entre las partes y se confirman por escrito antes de comenzar.",
-  confidencialidad: "Ambas partes se comprometen a mantener en confidencialidad la información compartida durante la ejecución del servicio.",
-  cancelacion: "Cualquier cancelación deberá notificarse por escrito con la debida anticipación.",
-  otras: "",
-};
+function getClausulasDefecto(t: TFunction): Clausulas {
+  return {
+    formaPago: t("contratos.clausulasDefecto.formaPago"),
+    entrega: t("contratos.clausulasDefecto.entrega"),
+    confidencialidad: t("contratos.clausulasDefecto.confidencialidad"),
+    cancelacion: t("contratos.clausulasDefecto.cancelacion"),
+    otras: "",
+  };
+}
 
-const NOTA_LEGAL = `Este documento se genera como una plantilla de apoyo, no como asesoría legal. Flowo no garantiza que su contenido sea válido, completo o suficiente según las leyes de tu país. Es responsabilidad de las partes (usuario de la plataforma y cliente) revisar, ajustar y validar el contenido antes de firmarlo.
-
-Flowo es una plataforma tecnológica y no presta los servicios descritos en este documento. En consecuencia:
-- No es parte del acuerdo entre el usuario de la plataforma y el cliente.
-- No interviene ni responde por la ejecución, entregas, pagos o calidad de los servicios.
-- No es responsable de incumplimientos, disputas, daños o perjuicios entre las partes.
-- No garantiza la validez legal del documento ni de las firmas en él contenidas.
-
-Si tienes dudas, consulta con un abogado o profesional legal de tu país antes de firmar.`;
-
-const estadoConfig = {
-  "borrador": { label: "Borrador", color: "text-muted bg-gray/10" },
-  "firmado": { label: "Firmado", color: "text-accent bg-accent/10" },
-};
+function getEstadoConfig(t: TFunction) {
+  return {
+    "borrador": { label: t("contratos.estados.borrador"), color: "text-muted bg-gray/10" },
+    "firmado": { label: t("contratos.estados.firmado"), color: "text-accent bg-accent/10" },
+  };
+}
 
 const bordeEstado = {
   "borrador": "border-l-gray",
@@ -82,6 +78,7 @@ function sumarDias(dias: number) {
 }
 
 function Firma({ label, value, onChange }: { label: string; value: string | null; onChange: (d: string | null) => void }) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dibujandoRef = useRef(false);
@@ -112,7 +109,7 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
     ctx.font = "16px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("Firma aquí", cssW / 2, cssH / 2);
+    ctx.fillText(t("contratos.firma.aqui"), cssW / 2, cssH / 2);
   }
 
   function posicion(e: ReactPointerEvent<HTMLCanvasElement>) {
@@ -154,7 +151,7 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
   function subirArchivo(file: File | undefined) {
     if (!file) return;
     if (file.type !== "image/png") {
-      alert("Solo se permiten archivos PNG.");
+      alert(t("contratos.firma.soloPng"));
       return;
     }
     const reader = new FileReader();
@@ -179,15 +176,15 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
           <div className="flex gap-2 mt-2">
             <button onClick={usarFirma}
               className="bg-accent text-onaccent font-medium text-xs px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity">
-              Usar firma
+              {t("contratos.firma.usarFirma")}
             </button>
             <button onClick={preparar}
               className="text-muted text-xs border border-edge px-3 py-1.5 rounded-lg hover:text-primary hover:bg-surface transition-colors">
-              Borrar
+              {t("contratos.firma.borrar")}
             </button>
             <button onClick={() => setModoDibujo(false)}
               className="text-muted text-xs px-3 py-1.5 rounded-lg hover:text-primary transition-colors">
-              Cancelar
+              {t("contratos.firma.cancelar")}
             </button>
           </div>
         </div>
@@ -197,11 +194,11 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
           <div className="flex gap-2 mt-2">
             <button onClick={() => setModoDibujo(true)}
               className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors">
-              Cambiar
+              {t("contratos.firma.cambiar")}
             </button>
             <button onClick={() => onChange(null)}
               className="text-coral text-xs px-3 py-1.5 rounded-lg hover:bg-coral/10 transition-colors">
-              Quitar
+              {t("contratos.firma.quitar")}
             </button>
           </div>
         </div>
@@ -209,11 +206,11 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
         <div className="flex gap-2">
           <button onClick={() => setModoDibujo(true)}
             className="text-sm text-primary border border-edge px-3 py-2 rounded-lg hover:bg-surface transition-colors flex-1">
-            Dibujar firma
+            {t("contratos.firma.dibujarFirma")}
           </button>
           <button onClick={() => fileRef.current?.click()}
             className="text-sm text-primary border border-edge px-3 py-2 rounded-lg hover:bg-surface transition-colors flex-1">
-            Cargar PNG
+            {t("contratos.firma.cargarPng")}
           </button>
           <input ref={fileRef} type="file" accept="image/png" className="hidden" onChange={(e) => subirArchivo(e.target.files?.[0])} />
         </div>
@@ -224,6 +221,8 @@ function Firma({ label, value, onChange }: { label: string; value: string | null
 
 function Contratos() {
   const monedaUi = useMoneda();
+  const { t } = useTranslation();
+  const clausulasDefecto = getClausulasDefecto(t);
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -244,7 +243,7 @@ function Contratos() {
   const [monto, setMonto] = useState<string>("");
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
-  const [clausulas, setClausulas] = useState<Clausulas>({ ...CLAUSULAS_DEFECTO });
+  const [clausulas, setClausulas] = useState<Clausulas>({ ...clausulasDefecto });
   const [firmaUsuario, setFirmaUsuario] = useState<string | null>(null);
   const [firmaCliente, setFirmaCliente] = useState<string | null>(null);
   const [nombreFirmanteCliente, setNombreFirmanteCliente] = useState("");
@@ -270,7 +269,7 @@ function Contratos() {
 
     const mapeados = (contratosData || []).map((c: any) => ({
       ...c,
-      clausulas: { ...CLAUSULAS_DEFECTO, ...(c.clausulas || {}) },
+      clausulas: { ...clausulasDefecto, ...(c.clausulas || {}) },
       abierta: false,
     }));
     setContratos(mapeados);
@@ -296,7 +295,7 @@ function Contratos() {
     setMonto("");
     setFechaInicio(hoyISO());
     setFechaFin(sumarDias(30));
-    setClausulas({ ...CLAUSULAS_DEFECTO });
+    setClausulas({ ...clausulasDefecto });
     setFirmaUsuario(null);
     setFirmaCliente(null);
     setNombreFirmanteCliente("");
@@ -315,7 +314,7 @@ function Contratos() {
     setMonto(c.monto != null ? String(c.monto) : "");
     setFechaInicio(c.fecha_inicio || hoyISO());
     setFechaFin(c.fecha_fin || "");
-    setClausulas({ ...CLAUSULAS_DEFECTO, ...(c.clausulas || {}) });
+    setClausulas({ ...clausulasDefecto, ...(c.clausulas || {}) });
     setFirmaUsuario(c.firma_usuario || null);
     setFirmaCliente(c.firma_cliente || null);
     setNombreFirmanteCliente(c.nombre_firmante_cliente || "");
@@ -331,11 +330,11 @@ function Contratos() {
 
   async function guardarContrato() {
     if (!clienteNombre.trim()) {
-      setErrorForm("Escribe el nombre del cliente.");
+      setErrorForm(t("contratos.errores.nombreCliente"));
       return;
     }
     if (!descripcion.trim()) {
-      setErrorForm("Escribe una descripción del servicio.");
+      setErrorForm(t("contratos.errores.descripcion"));
       return;
     }
     setGuardando(true);
@@ -372,7 +371,7 @@ function Contratos() {
     if (editandoId) {
       const { error } = await supabase.from("contratos").update(payload).eq("id", editandoId);
       if (error) {
-        setErrorForm("No se pudo guardar: " + error.message);
+        setErrorForm(t("contratos.errores.guardar", { mensaje: error.message }));
       } else {
         setContratos(contratos.map((c) => c.id === editandoId ? ({ ...c, ...payload, abierta: c.abierta } as Contrato) : c));
         setMostrarForm(false);
@@ -391,10 +390,10 @@ function Contratos() {
     } else {
       const { data, error } = await supabase.from("contratos").insert(payload).select().single();
       if (error) {
-        setErrorForm("No se pudo guardar: " + error.message);
+        setErrorForm(t("contratos.errores.guardar", { mensaje: error.message }));
       } else if (data) {
         const nuevo = data as any;
-        setContratos([{ ...nuevo, clausulas: { ...CLAUSULAS_DEFECTO, ...(nuevo.clausulas || {}) }, abierta: false }, ...contratos]);
+        setContratos([{ ...nuevo, clausulas: { ...clausulasDefecto, ...(nuevo.clausulas || {}) }, abierta: false }, ...contratos]);
         setMostrarForm(false);
         if (estadoNuevo === "firmado") {
           if (firmaCliente) marcarFirmaReciente(nuevo.id);
@@ -487,7 +486,7 @@ function Contratos() {
 
   function compartirFirmaWhatsApp(c: Contrato) {
     const mensaje = encodeURIComponent(
-      "Hola " + c.cliente_nombre + ", tu contrato " + c.numero + " está listo para firmar. Entra a este enlace:\n\n" + enlaceFirma
+      t("contratos.firmaEnLinea.whatsappMensaje", { nombre: c.cliente_nombre, numero: c.numero, enlace: enlaceFirma })
     );
     openUrl("https://wa.me/" + (c.cliente_telefono || "") + "?text=" + mensaje);
     setModalFirmaId(null);
@@ -506,7 +505,7 @@ function Contratos() {
       moneda: c.moneda || monedaUi,
       fecha_inicio: c.fecha_inicio || hoyISO(),
       fecha_fin: c.fecha_fin || "",
-      clausulas: { ...CLAUSULAS_DEFECTO, ...(c.clausulas || {}) },
+      clausulas: { ...clausulasDefecto, ...(c.clausulas || {}) },
       firma_usuario: null,
       firma_cliente: null,
       nombre_firmante_cliente: c.nombre_firmante_cliente || "",
@@ -518,17 +517,17 @@ function Contratos() {
     const { data } = await supabase.from("contratos").insert(nuevo).select().single();
     if (data) {
       const duplicado = data as any;
-      setContratos([{ ...duplicado, clausulas: { ...CLAUSULAS_DEFECTO, ...(duplicado.clausulas || {}) }, abierta: false }, ...contratos]);
+      setContratos([{ ...duplicado, clausulas: { ...clausulasDefecto, ...(duplicado.clausulas || {}) }, abierta: false }, ...contratos]);
     }
   }
 
   function compartirWhatsApp(c: Contrato) {
     const mensaje = encodeURIComponent(
-      "Hola " + c.cliente_nombre + ", te comparto el contrato:\n\n" +
+      t("contratos.whatsapp.compartirSaludo", { nombre: c.cliente_nombre }) +
       "📄 " + c.numero + "\n" +
-      (c.descripcion ? "🧾 Servicio: " + c.descripcion + "\n" : "") +
-      (c.monto != null ? "💰 Monto: " + formatearMoneda(c.monto, monedaUi) + "\n" : "") +
-      "\nRevisa y coméntame cualquier duda. ¡Gracias!"
+      (c.descripcion ? t("contratos.whatsapp.compartirServicio", { servicio: c.descripcion }) + "\n" : "") +
+      (c.monto != null ? t("contratos.whatsapp.compartirMonto", { monto: formatearMoneda(c.monto, monedaUi) }) + "\n" : "") +
+      "\n" + t("contratos.whatsapp.compartirCierre")
     );
     openUrl("https://wa.me/" + (c.cliente_telefono || "") + "?text=" + mensaje);
   }
@@ -596,11 +595,11 @@ function Contratos() {
     doc.setTextColor(30, 30, 30);
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.text("CONTRATO", 155, 14);
+    doc.text(t("contratos.pdf.contrato"), 155, 14);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.text(c.numero, 155, 20);
-    doc.text("Emisión: " + c.fecha_emision, 155, 26);
+    doc.text(t("contratos.pdf.emision", { fecha: c.fecha_emision }), 155, 26);
 
     const estadoColor = c.estado === "firmado" ? teal : [160, 160, 160] as [number, number, number];
     doc.setFillColor(...estadoColor);
@@ -608,7 +607,7 @@ function Contratos() {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text(c.estado.toUpperCase(), 157, 35.5);
+    doc.text(t("contratos.estados." + c.estado).toUpperCase(), 157, 35.5);
 
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.3);
@@ -618,8 +617,8 @@ function Contratos() {
     doc.setTextColor(...gris);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text("PRESTADOR DE SERVICIOS", 14, y);
-    doc.text("CLIENTE", 110, y);
+    doc.text(t("contratos.pdf.prestadorServicios"), 14, y);
+    doc.text(t("contratos.pdf.cliente"), 110, y);
     y += 6;
 
     doc.setFont("helvetica", "bold");
@@ -657,8 +656,8 @@ function Contratos() {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6.5);
       doc.setTextColor(...gris);
-      doc.text("INICIO", 19, y);
-      doc.text("FIN", 112, y);
+      doc.text(t("contratos.pdf.inicio"), 19, y);
+      doc.text(t("contratos.pdf.fin"), 112, y);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.setTextColor(30, 30, 30);
@@ -670,7 +669,7 @@ function Contratos() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(30, 30, 30);
-    doc.text("MONTO TOTAL", 14, y);
+    doc.text(t("contratos.pdf.montoTotal"), 14, y);
     if (c.monto != null) {
       doc.setTextColor(...teal);
       doc.text(formatearMoneda(c.monto, moneda), 196, y, { align: "right" });
@@ -686,7 +685,7 @@ function Contratos() {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("DESCRIPCIÓN DEL SERVICIO", 14, y);
+      doc.text(t("contratos.pdf.descripcionServicio"), 14, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -697,11 +696,11 @@ function Contratos() {
     }
 
     const clausulasTitulos: [keyof Clausulas, string][] = [
-      ["formaPago", "FORMA DE PAGO"],
-      ["entrega", "ENTREGA"],
-      ["confidencialidad", "CONFIDENCIALIDAD"],
-      ["cancelacion", "CANCELACIÓN"],
-      ["otras", "OTRAS CONDICIONES"],
+      ["formaPago", t("contratos.pdf.formaPago")],
+      ["entrega", t("contratos.pdf.entrega")],
+      ["confidencialidad", t("contratos.pdf.confidencialidad")],
+      ["cancelacion", t("contratos.pdf.cancelacion")],
+      ["otras", t("contratos.pdf.otrasCondiciones")],
     ];
 
     const clausulasPresentes = clausulasTitulos.filter(([k]) => c.clausulas?.[k]?.trim());
@@ -714,7 +713,7 @@ function Contratos() {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("CLÁUSULAS", 14, y);
+      doc.text(t("contratos.pdf.clausulas"), 14, y);
       y += 6;
       doc.setFontSize(9);
       doc.setTextColor(60, 60, 60);
@@ -743,12 +742,12 @@ function Contratos() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(...ink);
-    doc.text("IMPORTANTE", 14, y);
+    doc.text(t("contratos.pdf.importante"), 14, y);
     y += 6;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(90, 90, 90);
-    const lineasNota = doc.splitTextToSize(NOTA_LEGAL, 178);
+    const lineasNota = doc.splitTextToSize(t("contratos.pdf.notaLegal"), 178);
     for (let i = 0; i < lineasNota.length; i++) {
       if (y > 250) { doc.addPage(); y = 25; }
       doc.text(lineasNota[i], 14, y);
@@ -782,7 +781,7 @@ function Contratos() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
     doc.setTextColor(...gris);
-    doc.text("FIRMAS", 14, y);
+    doc.text(t("contratos.pdf.firmas"), 14, y);
     y += 8;
 
     const anchoFirma = 82;
@@ -810,17 +809,17 @@ function Contratos() {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
         doc.setTextColor(150, 150, 150);
-        doc.text(dato ? "Firma no disponible" : "Pendiente de firma", x + 5, y + 15);
+        doc.text(dato ? t("contratos.pdf.firmaNoDisponible") : t("contratos.pdf.pendienteFirma"), x + 5, y + 15);
       }
       y += altoFirma + 3;
     }
 
     const signerCliente = c.nombre_firmante_cliente || c.cliente_nombre;
     const yFirmas = y;
-    dibujarFirma(xIzq, imgPrestador, c.firma_usuario, "FIRMA DEL PRESTADOR");
+    dibujarFirma(xIzq, imgPrestador, c.firma_usuario, t("contratos.pdf.firmaPrestador"));
     const yDespuesIzq = y;
     y = yFirmas;
-    dibujarFirma(xDer, imgCliente, c.firma_cliente, "FIRMA DEL CLIENTE");
+    dibujarFirma(xDer, imgCliente, c.firma_cliente, t("contratos.pdf.firmaCliente"));
     const yDespuesDer = y;
     y = Math.max(yDespuesIzq, yDespuesDer);
 
@@ -835,8 +834,8 @@ function Contratos() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...gris);
-    doc.text("Fecha: " + (c.fecha_firma_usuario || "—"), xIzq, y + 10);
-    doc.text("Fecha: " + (c.fecha_firma_cliente || "—"), xDer, y + 10);
+    doc.text(t("contratos.pdf.fecha", { fecha: c.fecha_firma_usuario || "—" }), xIzq, y + 10);
+    doc.text(t("contratos.pdf.fecha", { fecha: c.fecha_firma_cliente || "—" }), xDer, y + 10);
     y += 18;
 
     // Footer
@@ -847,8 +846,7 @@ function Contratos() {
     const logoW = (logoH * 7575) / 1089;
     doc.addImage(logoFlowo, "PNG", 14, footerY + (footerHeight - logoH) / 2, logoW, logoH);
 
-    const nota =
-      "Documento generado con Flowo como plantilla de contrato. No reemplaza asesoría legal profesional.";
+    const nota = t("contratos.pdf.notaFooter");
 
     doc.setTextColor(220, 220, 220);
     doc.setFont("helvetica", "normal");
@@ -858,7 +856,7 @@ function Contratos() {
 
     doc.setFontSize(5);
     doc.setTextColor(180, 180, 180);
-    doc.text("Generado con Flowo · appflowo.com", 70, footerY + 22);
+    doc.text(t("contratos.pdf.generadoCon"), 70, footerY + 22);
 
     const pdfBytes = doc.output("arraybuffer");
     const { writeFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
@@ -867,7 +865,7 @@ function Contratos() {
       new Uint8Array(pdfBytes),
       { baseDir: BaseDirectory.Download }
     );
-    sendNotification({ title: "PDF guardado", body: c.numero + ".pdf guardado en Descargas" });
+    sendNotification({ title: t("contratos.pdf.notifTitulo"), body: t("contratos.pdf.notifCuerpo", { nombre: c.numero + ".pdf" }) });
   }
 
   const totalBorradores = contratos.filter((c) => c.estado === "borrador").length;
@@ -876,10 +874,12 @@ function Contratos() {
   const totalMonto = contratos.reduce((a, c) => a + (c.monto || 0), 0);
 
   const filtrosEstado = [
-    { id: "todas", label: "Todos", conteo: contratos.length },
-    { id: "borrador", label: "Borradores", conteo: totalBorradores },
-    { id: "firmado", label: "Firmados", conteo: firmados.length },
+    { id: "todas", label: t("contratos.filtros.todas"), conteo: contratos.length },
+    { id: "borrador", label: t("contratos.estados.borradores"), conteo: totalBorradores },
+    { id: "firmado", label: t("contratos.estados.firmados"), conteo: firmados.length },
   ];
+
+  const estadoConfig = getEstadoConfig(t);
 
   const contratosFiltrados = contratos.filter((c) => {
     const coincideEstado = filtroEstado === "todas" || c.estado === filtroEstado;
@@ -892,7 +892,7 @@ function Contratos() {
   });
 
   if (cargando) {
-    return <div className="p-8"><p className="text-muted text-sm">Cargando contratos...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">{t("contratos.cargando")}</p></div>;
   }
 
   const botonSecundario = "text-sm text-primary border border-edge px-3 py-2 rounded-lg hover:bg-surface transition-colors flex-shrink-0";
@@ -902,31 +902,31 @@ function Contratos() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-primary">Contratos</h2>
-          <p className="text-muted mt-1">{contratos.length} contratos en total</p>
-          <p className="text-muted text-xs mt-1 opacity-70">Flowo es una herramienta; la validez legal del contrato es responsabilidad de las partes.</p>
+          <h2 className="text-2xl font-bold text-primary">{t("contratos.titulo")}</h2>
+          <p className="text-muted mt-1">{t("contratos.totalContratos", { count: contratos.length })}</p>
+          <p className="text-muted text-xs mt-1 opacity-70">{t("contratos.disclaimer")}</p>
         </div>
         <button onClick={abrirForm}
           className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-          + Nuevo contrato
+          {t("contratos.nuevoContrato")}
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Contratos</p>
+          <p className="text-muted text-xs mb-1">{t("contratos.titulo")}</p>
           <p className="text-2xl font-bold text-primary">{contratos.length}</p>
-          <p className="text-muted text-xs mt-1">{formatearMoneda(totalMonto, monedaUi)} en total</p>
+          <p className="text-muted text-xs mt-1">{t("contratos.resumen.enTotal", { monto: formatearMoneda(totalMonto, monedaUi) })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Borradores</p>
+          <p className="text-muted text-xs mb-1">{t("contratos.resumen.borradores")}</p>
           <p className="text-2xl font-bold text-primary">{totalBorradores}</p>
-          <p className="text-muted text-xs mt-1">Por firmar</p>
+          <p className="text-muted text-xs mt-1">{t("contratos.resumen.porFirmar")}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Firmados</p>
+          <p className="text-muted text-xs mb-1">{t("contratos.resumen.firmados")}</p>
           <p className="text-2xl font-bold text-primary">{firmados.length}</p>
-          <p className="text-accent text-xs mt-1">{formatearMoneda(totalFirmados, monedaUi)} firmado</p>
+          <p className="text-accent text-xs mt-1">{t("contratos.resumen.firmado", { monto: formatearMoneda(totalFirmados, monedaUi) })}</p>
         </div>
       </div>
 
@@ -935,44 +935,44 @@ function Contratos() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-primary text-lg font-semibold tracking-tight">
-                {editandoId ? "Editar contrato" : "Nuevo contrato"}
+                {editandoId ? t("contratos.form.tituloEditar") : t("contratos.form.tituloNuevo")}
               </h3>
-              <p className="text-muted text-xs mt-0.5">Número {editandoId ? "" : proximoNumero()}</p>
+              <p className="text-muted text-xs mt-0.5">{t("contratos.form.numero", { numero: editandoId ? "" : proximoNumero() })}</p>
             </div>
             <button onClick={() => { setMostrarForm(false); setEditandoId(null); }}
               className="text-muted text-xs px-3 py-1.5 rounded-lg hover:text-primary hover:bg-surface transition-colors">
-              Cerrar
+              {t("contratos.form.cerrar")}
             </button>
           </div>
 
           <div className="mb-6">
-            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">Datos del cliente</p>
+            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">{t("contratos.form.datosCliente")}</p>
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">
                 <label className="text-muted text-xs mb-1.5 block">
-                  Nombre <span className="text-accent">*</span>
+                  {t("contratos.form.nombre")} <span className="text-accent">*</span>
                 </label>
                 <input value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)}
-                  placeholder="Nombre del cliente"
+                  placeholder={t("contratos.form.placeholderNombreCliente")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
               <div>
-                <label className="text-muted text-xs mb-1.5 block">Teléfono (WhatsApp)</label>
+                <label className="text-muted text-xs mb-1.5 block">{t("contratos.form.telefonoWhatsApp")}</label>
                 <input value={clienteTelefono} onChange={(e) => setClienteTelefono(e.target.value)}
-                  placeholder="+57 300 123 4567"
+                  placeholder={t("contratos.form.placeholderTelefono")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div>
-                <label className="text-muted text-xs mb-1.5 block">Correo</label>
+                <label className="text-muted text-xs mb-1.5 block">{t("contratos.form.correo")}</label>
                 <input value={clienteCorreo} onChange={(e) => setClienteCorreo(e.target.value)}
-                  placeholder="cliente@correo.com"
+                  placeholder={t("contratos.form.placeholderCorreo")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
               <div>
-                <label className="text-muted text-xs mb-1.5 block">Firma del cliente</label>
-                <p className="text-muted text-xs">Se agrega más abajo, en la sección de firmas.</p>
+                <label className="text-muted text-xs mb-1.5 block">{t("contratos.form.firmaCliente")}</label>
+                <p className="text-muted text-xs">{t("contratos.form.firmaClienteNota")}</p>
               </div>
             </div>
           </div>

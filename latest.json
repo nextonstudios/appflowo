@@ -1,10 +1,10 @@
 {
-  "version": "1.1.0",
-  "notes": "Flowo v1.1.0 - Firma de contratos en línea (enlaces cortos, firma con nombre), portal del cliente rediseñado, selects personalizados y PDFs con logo",
-  "pub_date": "2026-08-14T00:00:00Z",
+  "version": "1.2.2",
+  "notes": "Flowo v1.2.0 - Soporte para inglés, almacenamiento en la nube con Dropbox y OneDrive",
+  "pub_date": "2026-08-16T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "url": "https://github.com/nextonstudios/appflowo/releases/download/v1.1.0/flowo_1.1.0_x64-setup.exe",
+      "url": "https://github.com/nextonstudios/appflowo/releases/download/v1.2.0/flowo_1.2.0_x64-setup.exe",
       "signature": "PENDIENTE_REEMPLAZAR_TRAS_COMPILAR"
     }
   }

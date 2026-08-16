@@ -1,4 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import Select from "./Select";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -8,6 +10,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { formatearMoneda } from "../lib/moneda";
 import { contrasenaValida } from "../lib/contrasena";
 import ChecklistContrasena from "./ChecklistContrasena";
+import { cambiarIdioma, IDIOMAS } from "../i18n";
 
 interface Servicio {
   id: number;
@@ -33,31 +36,41 @@ interface Props {
   onRegistrarDescartar?: (fn: () => void) => void;
 }
 
-const ACENTOS = [
-  { id: "teal", nombre: "Teal", muestra: "#1DB8A0", check: "#0E1A16" },
-  { id: "violeta", nombre: "Violeta", muestra: "#7C5CBF", check: "#FFFFFF" },
-  { id: "azul", nombre: "Azul", muestra: "#3B82F6", check: "#FFFFFF" },
-  { id: "ambar", nombre: "Ámbar", muestra: "#F59E0B", check: "#0E1A16" },
-  { id: "rosa", nombre: "Rosa", muestra: "#EC4899", check: "#FFFFFF" },
-];
+function getAcentos(t: TFunction): { id: string; nombre: string; muestra: string; check: string }[] {
+  return [
+    { id: "teal", nombre: t("perfil.acentos.teal"), muestra: "#1DB8A0", check: "#0E1A16" },
+    { id: "violeta", nombre: t("perfil.acentos.violeta"), muestra: "#7C5CBF", check: "#FFFFFF" },
+    { id: "azul", nombre: t("perfil.acentos.azul"), muestra: "#3B82F6", check: "#FFFFFF" },
+    { id: "ambar", nombre: t("perfil.acentos.ambar"), muestra: "#F59E0B", check: "#0E1A16" },
+    { id: "rosa", nombre: t("perfil.acentos.rosa"), muestra: "#EC4899", check: "#FFFFFF" },
+  ];
+}
 
-const FUENTES = [
-  { id: "quicksand", nombre: "Quicksand", css: "'Quicksand', sans-serif" },
-  { id: "poppins", nombre: "Poppins", css: "'Poppins', sans-serif" },
-  { id: "jakarta", nombre: "Plus Jakarta Sans", css: "'Plus Jakarta Sans', sans-serif" },
-  { id: "inter", nombre: "Inter", css: "'Inter', sans-serif" },
-  { id: "nunito", nombre: "Nunito", css: "'Nunito', sans-serif" },
-  { id: "grotesk", nombre: "Space Grotesk", css: "'Space Grotesk', sans-serif" },
-];
+function getFuentes(t: TFunction): { id: string; nombre: string; css: string }[] {
+  return [
+    { id: "quicksand", nombre: t("perfil.fuentes.quicksand"), css: "'Quicksand', sans-serif" },
+    { id: "poppins", nombre: t("perfil.fuentes.poppins"), css: "'Poppins', sans-serif" },
+    { id: "jakarta", nombre: t("perfil.fuentes.jakarta"), css: "'Plus Jakarta Sans', sans-serif" },
+    { id: "inter", nombre: t("perfil.fuentes.inter"), css: "'Inter', sans-serif" },
+    { id: "nunito", nombre: t("perfil.fuentes.nunito"), css: "'Nunito', sans-serif" },
+    { id: "grotesk", nombre: t("perfil.fuentes.grotesk"), css: "'Space Grotesk', sans-serif" },
+  ];
+}
 
-const TAMANOS = [
-  { id: "pequena", nombre: "Pequeña", px: 13 },
-  { id: "normal", nombre: "Normal", px: 15 },
-  { id: "grande", nombre: "Grande", px: 17 },
-  { id: "muy-grande", nombre: "Muy grande", px: 20 },
-];
+function getTamanos(t: TFunction): { id: string; nombre: string; px: number }[] {
+  return [
+    { id: "pequena", nombre: t("perfil.tamanos.pequena"), px: 13 },
+    { id: "normal", nombre: t("perfil.tamanos.normal"), px: 15 },
+    { id: "grande", nombre: t("perfil.tamanos.grande"), px: 17 },
+    { id: "muy-grande", nombre: t("perfil.tamanos.muyGrande"), px: 20 },
+  ];
+}
 
 function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSinGuardar, onRegistrarGuardar, onRegistrarDescartar }: Props) {
+  const { t, i18n } = useTranslation();
+  const ACENTOS = getAcentos(t);
+  const FUENTES = getFuentes(t);
+  const TAMANOS = getTamanos(t);
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -65,7 +78,7 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   const [marcaDesc, setMarcaDesc] = useState("");
   const [marcaWeb, setMarcaWeb] = useState("");
   const [moneda, setMoneda] = useState("USD");
-  const [idioma, setIdioma] = useState("es");
+  const [idioma, setIdioma] = useState(i18n.language === "en" ? "en" : "es");
   const [snapshot, setSnapshot] = useState("");
   const [tema, setTema] = useState("oscuro");
   const [acento, setAcento] = useState("teal");
@@ -107,6 +120,8 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   const [integraciones, setIntegraciones] = useState<Integracion[]>([]);
   const [conectandoDrive, setConectandoDrive] = useState(false);
   const [errorDrive, setErrorDrive] = useState<string | null>(null);
+  const [conectandoDropbox, setConectandoDropbox] = useState(false);
+  const [conectandoOneDrive, setConectandoOneDrive] = useState(false);
   const [version, setVersion] = useState("");
   const [seccionAbierta, setSeccionAbierta] = useState("perfil");
   const [modalContrasena, setModalContrasena] = useState(false);
@@ -165,6 +180,16 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   useEffect(() => {
     cargarPerfil();
     cargarIntegraciones();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      setConectandoDropbox(false);
+      setConectandoOneDrive(false);
+      cargarIntegraciones();
+    };
+    window.addEventListener("cloud-storage-updated", handler);
+    return () => window.removeEventListener("cloud-storage-updated", handler);
   }, []);
 
   async function cargarPerfil() {
@@ -243,13 +268,13 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
 
     // Validar formato
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      setErrorLogo("Solo se aceptan archivos PNG o JPG.");
+      setErrorLogo(t("perfil.logo.errorFormato"));
       return;
     }
 
     // Validar peso (5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setErrorLogo("El logo no puede superar 5MB.");
+      setErrorLogo(t("perfil.logo.errorPeso"));
       return;
     }
 
@@ -262,7 +287,7 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
       .upload(user.id + "/logo", file, { upsert: true, contentType: file.type });
 
     if (error) {
-      setErrorLogo("Error al subir el logo. Intenta de nuevo.");
+      setErrorLogo(t("perfil.logo.errorSubida"));
     } else {
       const { data } = await supabase.storage
         .from("avatars")
@@ -339,7 +364,7 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
         await cargarIntegraciones();
       }
     } catch (err: any) {
-      setErrorDrive("No se pudo conectar. Intenta de nuevo.");
+      setErrorDrive(t("perfil.nube.error"));
     } finally {
       setConectandoDrive(false);
     }
@@ -361,6 +386,60 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
       .delete()
       .eq("user_id", user.id)
       .eq("proveedor", "google_drive");
+
+    await cargarIntegraciones();
+  }
+
+  async function conectarDropbox() {
+    setConectandoDropbox(true);
+    setErrorDrive(null);
+    try {
+      const { iniciarFlujoDropbox } = await import("../lib/dropbox");
+      const { authUrl, verifier } = await iniciarFlujoDropbox();
+      sessionStorage.setItem("dropbox_pkce_verifier", verifier);
+      await openUrl(authUrl);
+    } catch (err: any) {
+      setErrorDrive(t("perfil.nube.error"));
+      setConectandoDropbox(false);
+    }
+  }
+
+  async function desconectarDropbox() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from("integraciones")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("proveedor", "dropbox");
+
+    await cargarIntegraciones();
+  }
+
+  async function conectarOneDrive() {
+    setConectandoOneDrive(true);
+    setErrorDrive(null);
+    try {
+      const { iniciarFlujoOneDrive } = await import("../lib/onedrive");
+      const { authUrl, verifier } = await iniciarFlujoOneDrive();
+      sessionStorage.setItem("onedrive_pkce_verifier", verifier);
+      await openUrl(authUrl);
+    } catch (err: any) {
+      setErrorDrive(t("perfil.nube.error"));
+      setConectandoOneDrive(false);
+    }
+  }
+
+  async function desconectarOneDrive() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from("integraciones")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("proveedor", "onedrive");
 
     await cargarIntegraciones();
   }
@@ -409,32 +488,32 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   async function cambiarContrasena() {
     setErrorContrasena(null);
     if (!contrasenaValida(nuevaContrasena)) {
-      setErrorContrasena("La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.");
+      setErrorContrasena(t("perfil.contrasena.errorLargo"));
       return;
     }
     if (nuevaContrasena !== confirmarContrasena) {
-      setErrorContrasena("La confirmación no coincide con la nueva contraseña.");
+      setErrorContrasena(t("perfil.contrasena.errorConfirmacion"));
       return;
     }
     setCargandoContrasena(true);
     try {
       const { error: errorVerificacion } = await supabase.auth.signInWithPassword({ email, password: contrasenaActual });
       if (errorVerificacion) {
-        setErrorContrasena("La contraseña actual no es correcta.");
+        setErrorContrasena(t("perfil.contrasena.errorActual"));
         return;
       }
       const { error } = await supabase.auth.updateUser({ password: nuevaContrasena });
       if (error) {
         if (error.message.toLowerCase().includes("different")) {
-          setErrorContrasena("La nueva contraseña debe ser diferente a la actual.");
+          setErrorContrasena(t("perfil.contrasena.errorDiferente"));
         } else {
-          setErrorContrasena("No se pudo cambiar la contraseña. Intenta de nuevo.");
+          setErrorContrasena(t("perfil.contrasena.errorCambio"));
         }
         return;
       }
       setExitoContrasena(true);
     } catch {
-      setErrorContrasena("Ocurrió un error. Intenta de nuevo.");
+      setErrorContrasena(t("perfil.contrasena.errorGeneral"));
     } finally {
       setCargandoContrasena(false);
     }
@@ -450,29 +529,29 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   async function eliminarCuenta() {
     setErrorEliminar(null);
     if (confirmacionEliminar.trim().toUpperCase() !== "ELIMINAR") {
-      setErrorEliminar('Escribe "ELIMINAR" para confirmar.');
+      setErrorEliminar(t("perfil.eliminar.errorConfirmacion"));
       return;
     }
     if (!contrasenaEliminar) {
-      setErrorEliminar("Escribe tu contraseña.");
+      setErrorEliminar(t("perfil.eliminar.errorContrasenaVacia"));
       return;
     }
     setCargandoEliminar(true);
     try {
       const { error: errorVerificacion } = await supabase.auth.signInWithPassword({ email, password: contrasenaEliminar });
       if (errorVerificacion) {
-        setErrorEliminar("La contraseña no es correcta.");
+        setErrorEliminar(t("perfil.eliminar.errorContrasena"));
         return;
       }
       const { error } = await supabase.rpc("eliminar_cuenta");
       if (error) {
-        setErrorEliminar("No se pudo eliminar la cuenta. Asegúrate de que la función esté habilitada en Supabase.");
+        setErrorEliminar(t("perfil.eliminar.error"));
         return;
       }
       await supabase.auth.signOut();
       onLogout();
     } catch {
-      setErrorEliminar("Ocurrió un error. Intenta de nuevo.");
+      setErrorEliminar(t("perfil.eliminar.errorGeneral"));
     } finally {
       setCargandoEliminar(false);
     }
@@ -552,7 +631,7 @@ function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSin
   }
 
 if (cargando) {
-  return <div className="p-8"><p className="text-muted text-sm">Cargando perfil...</p></div>;
+  return <div className="p-8"><p className="text-muted text-sm">{t("perfil.cargando")}</p></div>;
 }
 
   return (
@@ -560,18 +639,18 @@ if (cargando) {
 
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold text-primary">Perfil y ajustes</h2>
-          <p className="text-muted mt-1">Configura tu cuenta, tu marca y las preferencias de la app</p>
+          <h2 className="text-2xl font-bold text-primary">{t("perfil.titulo")}</h2>
+          <p className="text-muted mt-1">{t("perfil.desc")}</p>
         </div>
         <button onClick={guardarCambios}
           className="bg-accent text-onaccent font-medium px-6 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity flex-shrink-0">
-          {guardado ? "¡Guardado!" : "Guardar cambios"}
+          {guardado ? t("perfil.guardado") : t("perfil.guardarCambios")}
         </button>
       </div>
 
       <div className="space-y-4">
 
-      <Seccion id="perfil" titulo="Perfil y marca" descripcion="Tus datos personales y la marca bajo la que ofreces tus servicios"
+      <Seccion id="perfil" titulo={t("perfil.seccion.perfil.titulo")} descripcion={t("perfil.seccion.perfil.desc")}
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>}>
@@ -585,7 +664,7 @@ if (cargando) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <h4 className="text-primary text-sm font-medium">Perfil</h4>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.perfil.titulo")}</h4>
             </div>
 
             <div className="flex items-center gap-6 mb-5">
@@ -598,7 +677,7 @@ if (cargando) {
                   </div>
                 )}
                 <label className="text-accent text-xs cursor-pointer hover:underline">
-                  Cambiar foto
+                  {t("perfil.perfil.cambiarFoto")}
                   <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
@@ -610,30 +689,30 @@ if (cargando) {
                 </label>
               </div>
               <div>
-                <p className="text-primary font-medium text-lg">{nombre || "Freelancer"}</p>
-                <p className="text-muted text-sm mt-0.5">{marcaNombre || "Sin marca personal"}</p>
+                <p className="text-primary font-medium text-lg">{nombre || t("perfil.perfil.freelancer")}</p>
+                <p className="text-muted text-sm mt-0.5">{marcaNombre || t("perfil.perfil.sinMarca")}</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="text-muted text-xs mb-1 block">Nombre completo</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.perfil.nombreCompleto")}</label>
                 <input value={nombre} onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Tu nombre"
+                  placeholder={t("perfil.perfil.placeholderNombre")}
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                <p className="text-muted text-xs opacity-70 mt-1">Así te identifica la app en tus proyectos y comprobantes.</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.perfil.descNombre")}</p>
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">Email</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.perfil.email")}</label>
                 <input value={email} disabled
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-muted text-sm focus:outline-none opacity-60" />
-                <p className="text-muted text-xs opacity-70 mt-1">Cuenta con la que inicias sesión. No se puede cambiar.</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.perfil.descEmail")}</p>
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">WhatsApp</label>
-                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Ej: +57 3001234567"
+                <label className="text-muted text-xs mb-1 block">{t("perfil.perfil.whatsapp")}</label>
+                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder={t("perfil.perfil.placeholderWhatsapp")}
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                <p className="text-muted text-xs opacity-70 mt-1">Debe llevar el <span className="text-accent">+</span> y el indicativo de país para poder contactarlo por WhatsApp (ej: +57 3001234567)</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.perfil.descWhatsapp1")}<span className="text-accent">+</span>{t("perfil.perfil.descWhatsapp2")}</p>
               </div>
             </div>
           </div>
@@ -647,14 +726,14 @@ if (cargando) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
                 </svg>
               </div>
-              <h4 className="text-primary text-sm font-medium">Marca personal</h4>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.marca.titulo")}</h4>
             </div>
 
             <div className="flex items-center gap-5 mb-5">
               <div className="flex flex-col items-center gap-1">
                 {logo ? (
                   <div className="w-20 h-20 rounded-xl bg-canvas border border-edge flex items-center justify-center overflow-hidden flex-shrink-0">
-                    <img src={logo} alt="Logo de marca" className="max-h-16 max-w-16 object-contain" onError={() => setLogo(null)} />
+                    <img src={logo} alt={t("perfil.marca.altLogo")} className="max-h-16 max-w-16 object-contain" onError={() => setLogo(null)} />
                   </div>
                 ) : (
                   <div className="w-20 h-20 rounded-xl bg-canvas border border-edge flex items-center justify-center text-muted flex-shrink-0">
@@ -664,7 +743,7 @@ if (cargando) {
                   </div>
                 )}
                 <label className="text-accent text-xs cursor-pointer hover:underline">
-                  {subiendoLogo ? "Subiendo..." : logo ? "Cambiar logo" : "Subir logotipo"}
+                  {subiendoLogo ? t("perfil.marca.subiendo") : logo ? t("perfil.marca.cambiarLogo") : t("perfil.marca.subirLogo")}
                   <input type="file" accept="image/png,image/jpeg" className="hidden" disabled={subiendoLogo} onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) subirLogo(file);
@@ -672,38 +751,38 @@ if (cargando) {
                 </label>
                 {logo && (
                   <button onClick={eliminarLogo} className="text-coral text-xs hover:underline">
-                    Eliminar logo
+                    {t("perfil.marca.eliminarLogo")}
                   </button>
                 )}
               </div>
               <div>
-                <p className="text-primary font-medium text-lg">{logo ? "Tu logotipo" : "Sin logotipo"}</p>
-                <p className="text-muted text-sm mt-0.5">PNG o JPG · Máx. 5MB</p>
-                <p className="text-muted text-xs opacity-70 mt-1">Aparece en tus comprobantes PDF y en el portal del cliente.</p>
+                <p className="text-primary font-medium text-lg">{logo ? t("perfil.marca.tuLogotipo") : t("perfil.marca.sinLogotipo")}</p>
+                <p className="text-muted text-sm mt-0.5">{t("perfil.marca.formatos")}</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.marca.descLogo")}</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="text-muted text-xs mb-1 block">Nombre de marca</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.marca.nombre")}</label>
                 <input value={marcaNombre} onChange={(e) => setMarcaNombre(e.target.value)}
                   placeholder="JP Studio"
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                <p className="text-muted text-xs opacity-70 mt-1">El nombre comercial bajo el que ofreces tus servicios.</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.marca.descNombre")}</p>
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">Sitio web</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.marca.sitioWeb")}</label>
                 <input value={marcaWeb} onChange={(e) => setMarcaWeb(e.target.value)}
                   placeholder="www.jpstudio.com"
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                <p className="text-muted text-xs opacity-70 mt-1">Opcional — se muestra en el portal del cliente.</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.marca.descSitioWeb")}</p>
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">Descripción corta</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.marca.descripcionCorta")}</label>
                 <input value={marcaDesc} onChange={(e) => setMarcaDesc(e.target.value)}
-                  placeholder="Diseñador UI/UX freelance"
+                  placeholder={t("perfil.marca.placeholderDescripcion")}
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                <p className="text-muted text-xs opacity-70 mt-1">Una línea que resume tu trabajo. Ej: "Diseñador UI/UX freelance".</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.marca.descDescripcion")}</p>
               </div>
             </div>
 
@@ -713,7 +792,7 @@ if (cargando) {
         </div>
       </Seccion>
 
-      <Seccion id="servicios" titulo="Catálogo de servicios" descripcion="Tus tarifas base — se autocompletan al crear un proyecto"
+      <Seccion id="servicios" titulo={t("perfil.seccion.servicios.titulo")} descripcion={t("perfil.seccion.servicios.desc")}
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
         </svg>}>
@@ -723,7 +802,7 @@ if (cargando) {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Agregar servicio
+            {t("perfil.servicios.agregar")}
           </button>
         </div>
 
@@ -738,10 +817,10 @@ if (cargando) {
                 </div>
                 <div>
                   <h4 className="text-primary text-sm font-medium">
-                    {editandoId !== null ? "Editar servicio" : "Nuevo servicio"}
+                    {editandoId !== null ? t("perfil.servicios.editarTitulo") : t("perfil.servicios.nuevoTitulo")}
                   </h4>
                   <p className="text-muted text-xs mt-0.5">
-                    {editandoId !== null ? "Actualiza los datos de este servicio." : "Agrega una tarifa a tu catálogo de servicios."}
+                    {editandoId !== null ? t("perfil.servicios.descEditar") : t("perfil.servicios.descNuevo")}
                   </p>
                 </div>
               </div>
@@ -753,41 +832,41 @@ if (cargando) {
 
             <div className="p-5">
               <div className="mb-4">
-                <label className="text-muted text-xs mb-1.5 block">Modo de cobro</label>
+                <label className="text-muted text-xs mb-1.5 block">{t("perfil.servicios.modoCobro")}</label>
                 <div className="grid grid-cols-2 bg-canvas border border-edge rounded-lg p-1 gap-1">
                   <button type="button" onClick={() => setNuevoModo("fijo")}
                     className={"px-3 py-2 rounded-md text-sm font-medium transition-colors " +
                       (nuevoModo === "fijo" ? "bg-accent text-onaccent" : "text-muted hover:text-primary")}>
-                    Precio fijo
+                    {t("perfil.servicios.precioFijo")}
                   </button>
                   <button type="button" onClick={() => setNuevoModo("horas")}
                     className={"px-3 py-2 rounded-md text-sm font-medium transition-colors " +
                       (nuevoModo === "horas" ? "bg-accent text-onaccent" : "text-muted hover:text-primary")}>
-                    Por horas
+                    {t("perfil.servicios.porHoras")}
                   </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="text-muted text-xs mb-1 block">Nombre *</label>
+                  <label className="text-muted text-xs mb-1 block">{t("perfil.servicios.nombre")} *</label>
                   <input value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)}
-                    placeholder="Ej: Logo + Branding"
+                    placeholder={t("perfil.servicios.placeholderNombre")}
                     className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                  <p className="text-muted text-xs opacity-70 mt-1">El nombre del servicio que ofreces.</p>
+                  <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.servicios.descNombre")}</p>
                 </div>
                 <div>
-                  <label className="text-muted text-xs mb-1 block">Descripción</label>
+                  <label className="text-muted text-xs mb-1 block">{t("perfil.servicios.descripcion")}</label>
                   <input value={nuevoDesc} onChange={(e) => setNuevoDesc(e.target.value)}
-                    placeholder="Ej: Logo y manual de marca"
+                    placeholder={t("perfil.servicios.placeholderDescripcion")}
                     className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
-                  <p className="text-muted text-xs opacity-70 mt-1">Opcional — una breve descripción del alcance.</p>
+                  <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.servicios.descDescripcion")}</p>
                 </div>
               </div>
 
               <div className="max-w-xs">
                 <label className="text-muted text-xs mb-1 block">
-                  {nuevoModo === "fijo" ? "Precio *" : "Tarifa por hora *"}
+                  {nuevoModo === "fijo" ? t("perfil.servicios.precio") : t("perfil.servicios.tarifaHora")} *
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm font-medium">
@@ -798,7 +877,7 @@ if (cargando) {
                     className="w-full bg-canvas border border-edge rounded-lg pl-7 pr-3 py-2.5 text-primary text-base font-medium focus:outline-none focus:border-accent" />
                 </div>
                 <p className="text-muted text-xs opacity-70 mt-1">
-                  {nuevoModo === "fijo" ? "El total a cobrar por este servicio." : "Cuánto cobras por cada hora de trabajo."}
+                  {nuevoModo === "fijo" ? t("perfil.servicios.descPrecio") : t("perfil.servicios.descTarifa")}
                 </p>
               </div>
             </div>
@@ -806,11 +885,11 @@ if (cargando) {
             <div className="px-5 py-4 bg-canvas/50 border-t border-edge flex justify-end gap-2">
               <button onClick={() => setMostrarFormServicio(false)}
                 className="px-4 py-2 rounded-lg text-sm text-muted hover:text-primary hover:bg-surface transition-colors">
-                Cancelar
+                {t("perfil.servicios.cancelar")}
               </button>
               <button onClick={guardarServicio}
                 className="bg-accent text-onaccent font-medium px-5 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                {editandoId !== null ? "Guardar cambios" : "Agregar servicio"}
+                {editandoId !== null ? t("perfil.servicios.guardarCambios") : t("perfil.servicios.agregar")}
               </button>
             </div>
           </div>
@@ -821,30 +900,30 @@ if (cargando) {
             <div key={servicio.id} className="flex items-center justify-between bg-surface border border-edge rounded-lg px-4 py-3">
               <div className="min-w-0">
                 <p className="text-primary text-sm">{servicio.nombre}</p>
-                <p className="text-muted text-xs mt-0.5 truncate">{servicio.descripcion || "Sin descripción"}</p>
+                <p className="text-muted text-xs mt-0.5 truncate">{servicio.descripcion || t("perfil.servicios.sinDescripcion")}</p>
               </div>
               <div className="flex items-center gap-4 flex-shrink-0">
                 <div className="text-right">
                   <p className="text-accent text-sm font-medium">
                     {formatearMoneda(servicio.precio, moneda)}{servicio.modo === "horas" ? "/hr" : ""}
                   </p>
-                  <p className="text-muted text-xs">{servicio.modo === "fijo" ? "Precio fijo" : "Por horas"}</p>
+                  <p className="text-muted text-xs">{servicio.modo === "fijo" ? t("perfil.servicios.precioFijo") : t("perfil.servicios.porHoras")}</p>
                 </div>
-                <button onClick={() => abrirFormEditar(servicio)} className="text-muted text-xs hover:text-accent">Editar</button>
-                <button onClick={() => eliminarServicio(servicio.id)} className="text-muted text-xs hover:text-coral">Eliminar</button>
+                <button onClick={() => abrirFormEditar(servicio)} className="text-muted text-xs hover:text-accent">{t("perfil.servicios.editar")}</button>
+                <button onClick={() => eliminarServicio(servicio.id)} className="text-muted text-xs hover:text-coral">{t("perfil.servicios.eliminar")}</button>
               </div>
             </div>
           ))}
           {servicios.length === 0 && (
             <div className="sm:col-span-2 bg-surface border border-dashed border-edge rounded-lg p-6 text-center">
-              <p className="text-primary text-sm">Aún no tienes servicios</p>
-              <p className="text-muted text-xs mt-1">Crea tu primera tarifa y se autocompletará al crear un proyecto.</p>
+              <p className="text-primary text-sm">{t("perfil.servicios.vacio")}</p>
+              <p className="text-muted text-xs mt-1">{t("perfil.servicios.descVacio")}</p>
             </div>
           )}
         </div>
       </Seccion>
 
-      <Seccion id="preferencias" titulo="Preferencias de la app" descripcion="Moneda, idioma, tema, color de acento y tipografía"
+      <Seccion id="preferencias" titulo={t("perfil.seccion.preferencias.titulo")} descripcion={t("perfil.seccion.preferencias.desc")}
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
         </svg>}>
@@ -858,28 +937,28 @@ if (cargando) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
                 </svg>
               </div>
-              <h4 className="text-primary text-sm font-medium">Apariencia</h4>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.apariencia")}</h4>
             </div>
 
-            <label className="text-muted text-xs mb-1.5 block">Tema</label>
+            <label className="text-muted text-xs mb-1.5 block">{t("perfil.tema")}</label>
             <div className="grid grid-cols-2 gap-2 mb-5">
               <button onClick={() => aplicarTema("oscuro")}
                 className={"flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-colors " + (tema === "oscuro" ? "bg-accent/5 border-accent text-primary" : "bg-canvas border-edge text-muted hover:text-primary")}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
                 </svg>
-                <span className="text-xs font-medium">Oscuro</span>
+                <span className="text-xs font-medium">{t("perfil.oscuro")}</span>
               </button>
               <button onClick={() => aplicarTema("claro")}
                 className={"flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-colors " + (tema === "claro" ? "bg-accent/5 border-accent text-primary" : "bg-canvas border-edge text-muted hover:text-primary")}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
                 </svg>
-                <span className="text-xs font-medium">Claro</span>
+                <span className="text-xs font-medium">{t("perfil.claro")}</span>
               </button>
             </div>
 
-            <label className="text-muted text-xs mb-1.5 block">Color de acento</label>
+            <label className="text-muted text-xs mb-1.5 block">{t("perfil.colorAcento")}</label>
             <div className="flex items-center gap-2">
               {ACENTOS.map((a) => (
                 <button key={a.id} title={a.nombre} onClick={() => aplicarAcento(a.id)}
@@ -894,7 +973,7 @@ if (cargando) {
               ))}
               <span className="text-xs text-muted ml-1">{ACENTOS.find((a) => a.id === acento)?.nombre}</span>
             </div>
-            <p className="text-muted text-xs opacity-70 mt-2">El color principal de la app, probado para claro y oscuro. Los colores oficiales de Flowo no cambian.</p>
+            <p className="text-muted text-xs opacity-70 mt-2">{t("perfil.descColorAcento")}</p>
           </div>
 
           {/* Tipografía */}
@@ -905,10 +984,10 @@ if (cargando) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H3v2h6V5zm10 0H12v2h7V5zM9 11H3v2h6v-2zm10 0H12v2h7v-2zM9 17H3v2h6v-2zm10 0H12v2h7v-2z" />
                 </svg>
               </div>
-              <h4 className="text-primary text-sm font-medium">Tipografía</h4>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.tipografia")}</h4>
             </div>
 
-            <label className="text-muted text-xs mb-1.5 block">Fuente</label>
+            <label className="text-muted text-xs mb-1.5 block">{t("perfil.fuente")}</label>
             <div className="flex flex-wrap gap-2 mb-5">
               {FUENTES.map((f) => (
                 <button key={f.id} onClick={() => aplicarFuente(f.id)}
@@ -919,17 +998,17 @@ if (cargando) {
               ))}
             </div>
 
-            <label className="text-muted text-xs mb-1.5 block">Tamaño de texto</label>
+            <label className="text-muted text-xs mb-1.5 block">{t("perfil.tamanoTexto")}</label>
             <div className="grid grid-cols-4 gap-2">
-              {TAMANOS.map((t) => (
-                <button key={t.id} onClick={() => aplicarTamFuente(t.id)}
-                  className={"flex flex-col items-center gap-1 py-3 rounded-lg border transition-colors " + (tamFuente === t.id ? "bg-accent/5 border-accent text-primary" : "bg-canvas border-edge text-muted hover:text-primary")}>
-                  <span className="font-medium leading-none" style={{ fontSize: t.px }}>Aa</span>
-                  <span className="text-xs">{t.nombre}</span>
+              {TAMANOS.map((tam) => (
+                <button key={tam.id} onClick={() => aplicarTamFuente(tam.id)}
+                  className={"flex flex-col items-center gap-1 py-3 rounded-lg border transition-colors " + (tamFuente === tam.id ? "bg-accent/5 border-accent text-primary" : "bg-canvas border-edge text-muted hover:text-primary")}>
+                  <span className="font-medium leading-none" style={{ fontSize: tam.px }}>Aa</span>
+                  <span className="text-xs">{tam.nombre}</span>
                 </button>
               ))}
             </div>
-            <p className="text-muted text-xs opacity-70 mt-2">Elige el estilo de letra que más te guste para toda la app.</p>
+            <p className="text-muted text-xs opacity-70 mt-2">{t("perfil.descTipografia")}</p>
           </div>
 
           {/* General */}
@@ -940,33 +1019,28 @@ if (cargando) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0 0a9 9 0 003.5-7V5.5M12 21a9 9 0 01-3.5-7V5.5M12 3a9 9 0 019 9h-18a9 9 0 019-9z" />
                 </svg>
               </div>
-              <h4 className="text-primary text-sm font-medium">General</h4>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.general")}</h4>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-muted text-xs mb-1 block">Moneda</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.moneda")}</label>
                 <Select value={moneda} onChange={(v) => { setMoneda(v); localStorage.setItem("flowo_moneda", v); }}
                   options={[
-                    { value: "USD", label: "USD — Dólar" },
-                    { value: "COP", label: "COP — Peso colombiano" },
-                    { value: "EUR", label: "EUR — Euro" },
-                    { value: "MXN", label: "MXN — Peso mexicano" },
+                    { value: "USD", label: t("perfil.monedas.USD") },
+                    { value: "COP", label: t("perfil.monedas.COP") },
+                    { value: "EUR", label: t("perfil.monedas.EUR") },
+                    { value: "MXN", label: t("perfil.monedas.MXN") },
                   ]} />
-                <p className="text-muted text-xs opacity-70 mt-1">Controla cómo se muestran los precios en toda la app.</p>
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.descMoneda")}</p>
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">Idioma</label>
-                <div className="relative">
-                  <Select
-                    value="es"
-                    disabled
-                    options={[{ value: "es", label: "Español" }]}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-violet text-xs font-medium pointer-events-none">
-                    + idiomas pronto
-                  </span>
-                </div>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.idioma")}</label>
+                <Select
+                  value={idioma}
+                  onChange={(v) => { cambiarIdioma(v); setIdioma(v); }}
+                  options={IDIOMAS}
+                />
               </div>
             </div>
           </div>
@@ -974,20 +1048,17 @@ if (cargando) {
         </div>
       </Seccion>
 
-      <Seccion id="nube" titulo="Almacenamiento en la nube" descripcion="Conecta tu nube para crear carpetas automáticamente al registrar clientes y proyectos"
+      <Seccion id="nube" titulo={t("perfil.seccion.nube.titulo")} descripcion={t("perfil.seccion.nube.desc")}
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
         </svg>}>
-        <p className="text-muted text-xs opacity-70 mb-4">Al conectar una nube, Flowo podrá crear una carpeta por cliente y por proyecto automáticamente.</p>
+        <p className="text-muted text-xs opacity-70 mb-4">{t("perfil.nube.desc")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className={"rounded-xl border p-4 flex flex-col gap-3 " + (tieneIntegracion("google_drive") ? "border-accent/40 bg-accent/5" : "border-edge bg-surface")}>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-edge flex items-center justify-center flex-shrink-0">
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none">
-                  <path d="M8.5 2L3 11.5L8.5 21H15.5L21 11.5L15.5 2H8.5Z" fill="none" stroke="#1DB8A0" strokeWidth="1.5"/>
-                  <path d="M3 11.5H21" stroke="#1DB8A0" strokeWidth="1.5"/>
-                  <path d="M8.5 2L15.5 21" stroke="#7C5CBF" strokeWidth="1.5"/>
-                  <path d="M15.5 2L8.5 21" stroke="#F47C5C" strokeWidth="1.5"/>
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path d="M12.01 1.485c-2.082 0-3.754.02-3.743.047.01.02 1.708 3.001 3.774 6.62l3.76 6.574h3.76c2.081 0 3.753-.02 3.742-.047-.005-.02-1.708-3.001-3.775-6.62l-3.76-6.574zm-4.76 1.73a789.828 789.861 0 0 0-3.63 6.319L0 15.868l1.89 3.298 1.885 3.297 3.62-6.335 3.618-6.33-1.88-3.287C8.1 4.704 7.255 3.22 7.25 3.214zm2.259 12.653-.203.348c-.114.198-.96 1.672-1.88 3.287a423.93 423.948 0 0 1-1.698 2.97c-.01.026 3.24.042 7.222.042h7.244l1.796-3.157c.992-1.734 1.85-3.23 1.906-3.323l.104-.167h-7.249z" fill="currentColor"/>
                 </svg>
               </div>
               <div>
@@ -995,57 +1066,85 @@ if (cargando) {
                 {tieneIntegracion("google_drive") ? (
                   <p className="text-accent text-xs mt-0.5">{emailIntegracion("google_drive")}</p>
                 ) : (
-                  <p className="text-muted text-xs mt-0.5">No conectado</p>
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.nube.noConectado")}</p>
                 )}
               </div>
             </div>
             {tieneIntegracion("google_drive") ? (
               <button onClick={desconectarGoogleDrive}
                 className="w-full text-xs py-2 rounded-lg border border-coral/30 text-coral hover:bg-coral/10 transition-colors">
-                Desconectar
+                {t("perfil.nube.desconectar")}
               </button>
             ) : (
               <button onClick={conectarGoogleDrive} disabled={conectandoDrive}
                 className="w-full text-xs py-2 rounded-lg border border-accent/30 text-accent hover:bg-accent/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {conectandoDrive ? "Conectando..." : "Conectar"}
+                {conectandoDrive ? t("perfil.nube.conectando") : t("perfil.nube.conectar")}
               </button>
             )}
           </div>
 
-          <div className="rounded-xl border border-edge bg-surface p-4 flex flex-col gap-3 opacity-50">
+          <div className={"rounded-xl border p-4 flex flex-col gap-3 " + (tieneIntegracion("dropbox") ? "border-accent/40 bg-accent/5" : "border-edge bg-surface")}>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-edge flex items-center justify-center flex-shrink-0">
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#6B7280">
-                  <path d="M12 2L6 6.5L12 11L6 15.5L12 20L18 15.5L12 11L18 6.5L12 2Z"/>
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#0061FF">
+                  <path d="M6 1.807L0 5.629l6 3.822 6.001-3.822L6 1.807zM18 1.807l-6 3.822 6 3.822 6-3.822-6-3.822zM0 13.274l6 3.822 6.001-3.822L6 9.452l-6 3.822zM18 9.452l-6 3.822 6 3.822 6-3.822-6-3.822zM6 18.371l6.001 3.822 6-3.822-6-3.822L6 18.371z"/>
                 </svg>
               </div>
               <div>
                 <p className="text-primary text-sm font-medium">Dropbox</p>
-                <p className="text-muted text-xs mt-0.5">Próximamente</p>
+                {tieneIntegracion("dropbox") ? (
+                  <p className="text-accent text-xs mt-0.5">{emailIntegracion("dropbox")}</p>
+                ) : (
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.nube.noConectado")}</p>
+                )}
               </div>
             </div>
-            <div className="w-full text-xs py-2 rounded-lg border border-edge text-muted text-center">No disponible</div>
+            {tieneIntegracion("dropbox") ? (
+              <button onClick={desconectarDropbox}
+                className="w-full text-xs py-2 rounded-lg border border-coral/30 text-coral hover:bg-coral/10 transition-colors">
+                {t("perfil.nube.desconectar")}
+              </button>
+            ) : (
+              <button onClick={conectarDropbox} disabled={conectandoDropbox}
+                className="w-full text-xs py-2 rounded-lg border border-accent/30 text-accent hover:bg-accent/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {conectandoDropbox ? t("perfil.nube.conectando") : t("perfil.nube.conectar")}
+              </button>
+            )}
           </div>
 
-          <div className="rounded-xl border border-edge bg-surface p-4 flex flex-col gap-3 opacity-50">
+          <div className={"rounded-xl border bg-surface p-4 flex flex-col gap-3" + (tieneIntegracion("onedrive") ? " border-edge" : " border-edge")}>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-edge flex items-center justify-center flex-shrink-0">
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#6B7280">
-                  <path d="M20 17.5C21.4 17.5 22.5 16.4 22.5 15C22.5 13.7 21.6 12.6 20.3 12.5C20.1 10 18 8 15.5 8C14.3 8 13.2 8.5 12.4 9.2C11.7 7.3 9.9 6 7.8 6C5 6 2.8 8.2 2.8 11C2.8 11.1 2.8 11.2 2.8 11.3C1.6 11.8 0.8 13 0.8 14.3C0.8 16.1 2.2 17.5 4 17.5H20Z"/>
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#0078D4">
+                  <path d="M19.453 9.95q.961.058 1.787.468.826.41 1.442 1.066.615.657.966 1.512.352.856.352 1.816 0 1.008-.387 1.893-.386.885-1.049 1.547-.662.662-1.546 1.049-.885.387-1.893.387H6q-1.242 0-2.332-.475-1.09-.475-1.904-1.29-.815-.814-1.29-1.903Q0 14.93 0 13.688q0-.985.31-1.887.311-.903.862-1.658.55-.756 1.324-1.325.774-.568 1.711-.861.434-.129.85-.187.416-.06.861-.082h.012q.515-.786 1.207-1.413.691-.627 1.5-1.066.808-.44 1.705-.668.896-.229 1.845-.229 1.278 0 2.456.417 1.177.416 2.144 1.16.967.744 1.658 1.78.692 1.038 1.008 2.28zm-7.265-4.137q-1.325 0-2.52.544-1.195.545-2.04 1.565.446.117.85.299.405.181.792.416l4.78 2.86 2.731-1.15q.27-.117.545-.204.276-.088.58-.147-.293-.937-.855-1.705-.563-.768-1.319-1.318-.755-.551-1.658-.856-.902-.304-1.886-.304zM2.414 16.395l9.914-4.184-3.832-2.297q-.586-.351-1.23-.539-.645-.188-1.325-.188-.914 0-1.722.364-.809.363-1.412.978-.604.616-.955 1.436-.352.82-.352 1.723 0 .703.234 1.423.235.721.68 1.284zm16.711 1.793q.563 0 1.078-.176.516-.176.961-.516l-7.23-4.324-10.301 4.336q.527.328 1.13.504.604.175 1.237.175zm3.012-1.852q.363-.727.363-1.523 0-.774-.293-1.407t-.791-1.072q-.498-.44-1.166-.68-.668-.24-1.406-.24-.422 0-.838.1t-.815.252q-.398.152-.785.334-.386.181-.761.345Z"/>
                 </svg>
               </div>
               <div>
                 <p className="text-primary text-sm font-medium">OneDrive</p>
-                <p className="text-muted text-xs mt-0.5">Próximamente</p>
+                {tieneIntegracion("onedrive") ? (
+                  <p className="text-accent text-xs mt-0.5">{emailIntegracion("onedrive")}</p>
+                ) : (
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.nube.noConectado")}</p>
+                )}
               </div>
             </div>
-            <div className="w-full text-xs py-2 rounded-lg border border-edge text-muted text-center">No disponible</div>
+            {tieneIntegracion("onedrive") ? (
+              <button onClick={desconectarOneDrive}
+                className="w-full text-xs py-2 rounded-lg border border-coral/30 text-coral hover:bg-coral/10 transition-colors">
+                {t("perfil.nube.desconectar")}
+              </button>
+            ) : (
+              <button onClick={conectarOneDrive} disabled={conectandoOneDrive}
+                className="w-full text-xs py-2 rounded-lg border border-[#0078D4]/30 text-[#0078D4] hover:bg-[#0078D4]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {conectandoOneDrive ? t("perfil.nube.conectando") : t("perfil.nube.conectar")}
+              </button>
+            )}
           </div>
         </div>
         {errorDrive && <p className="text-coral text-xs mt-3">{errorDrive}</p>}
       </Seccion>
 
-      <Seccion id="cuenta" titulo="Cuenta y aplicación" descripcion="Seguridad, actualizaciones, soporte y cierre de sesión"
+      <Seccion id="cuenta" titulo={t("perfil.seccion.cuenta.titulo")} descripcion={t("perfil.seccion.cuenta.desc")}
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1061,11 +1160,11 @@ if (cargando) {
               </div>
               <div className="min-w-0">
                 {estadoUpdate.listo ? (
-                  <p className="text-primary text-sm font-medium">✓ Versión {estadoUpdate.version} lista para instalar</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.listo", { version: estadoUpdate.version })}</p>
                 ) : estadoUpdate.descargando ? (
-                  <p className="text-primary text-sm font-medium">Descargando v{estadoUpdate.version}...</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.descargando", { version: estadoUpdate.version })}</p>
                 ) : (
-                  <p className="text-primary text-sm font-medium">Nueva versión v{estadoUpdate.version} disponible</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.disponible", { version: estadoUpdate.version })}</p>
                 )}
                 {estadoUpdate.descargando && (
                   <div className="mt-2 w-40 h-1.5 bg-edge rounded-full overflow-hidden">
@@ -1080,13 +1179,13 @@ if (cargando) {
             {estadoUpdate.listo && (
               <button onClick={onReiniciar}
                 className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                Instalar
+                {t("perfil.cuenta.update.instalar")}
               </button>
             )}
             {estadoUpdate.disponible && !estadoUpdate.descargando && !estadoUpdate.listo && (
               <button onClick={onDescargar}
                 className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                Descargar v{estadoUpdate.version}
+                {t("perfil.cuenta.update.descargar", { version: estadoUpdate.version })}
               </button>
             )}
           </div>
@@ -1100,7 +1199,7 @@ if (cargando) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
             </div>
-            <h4 className="text-primary text-sm font-medium">Seguridad</h4>
+            <h4 className="text-primary text-sm font-medium">{t("perfil.cuenta.seguridad")}</h4>
           </div>
           <div className="p-4 pt-3">
             <div className="flex items-center justify-between gap-3">
@@ -1111,13 +1210,13 @@ if (cargando) {
                   </svg>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-primary text-sm font-medium">Cambiar contraseña</p>
-                  <p className="text-muted text-xs mt-0.5">Actualiza la contraseña de tu cuenta</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.cambiarContrasena")}</p>
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.cuenta.descCambiarContrasena")}</p>
                 </div>
               </div>
               <button onClick={abrirModalContrasena}
                 className="text-sm text-primary border border-edge px-4 py-2 rounded-lg hover:bg-surface2 transition-colors flex-shrink-0">
-                Cambiar
+                {t("perfil.cuenta.cambiar")}
               </button>
             </div>
             <div className="border-t border-edge my-3" />
@@ -1129,13 +1228,13 @@ if (cargando) {
                   </svg>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-primary text-sm font-medium">Eliminar cuenta</p>
-                  <p className="text-muted text-xs mt-0.5">Borra tu cuenta y todos tus datos para siempre</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.eliminarCuenta")}</p>
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.cuenta.descEliminarCuenta")}</p>
                 </div>
               </div>
               <button onClick={abrirModalEliminar}
                 className="text-sm text-coral border border-coral/30 px-4 py-2 rounded-lg hover:bg-coral/10 transition-colors flex-shrink-0">
-                Eliminar
+                {t("perfil.cuenta.eliminar")}
               </button>
             </div>
             <div className="border-t border-edge my-3" />
@@ -1147,13 +1246,13 @@ if (cargando) {
                   </svg>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-primary text-sm font-medium">Cerrar sesión</p>
-                  <p className="text-muted text-xs mt-0.5">Cierra tu sesión en este dispositivo</p>
+                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.cerrarSesion")}</p>
+                  <p className="text-muted text-xs mt-0.5">{t("perfil.cuenta.descCerrarSesion")}</p>
                 </div>
               </div>
               <button onClick={() => setModalCerrarSesion(true)}
                 className="text-sm text-coral border border-coral/30 px-4 py-2 rounded-lg hover:bg-coral/10 transition-colors flex-shrink-0">
-                Cerrar sesión
+                {t("perfil.cuenta.cerrarSesion")}
               </button>
             </div>
           </div>
@@ -1168,59 +1267,59 @@ if (cargando) {
               </svg>
             </div>
             <div className="min-w-0">
-              <p className="text-primary text-sm font-medium">¿Te gusta Flowo?</p>
-              <p className="text-muted text-xs mt-0.5">Si Flowo te está ahorrando tiempo, considera apoyarnos</p>
+              <p className="text-primary text-sm font-medium">{t("perfil.cuenta.soporte.titulo")}</p>
+              <p className="text-muted text-xs mt-0.5">{t("perfil.cuenta.soporte.desc")}</p>
             </div>
           </div>
           <button
             onClick={() => openUrl("https://www.paypal.com/ncp/payment/CAYESPSBEHB42")}
             className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity flex-shrink-0">
-            Invítanos un café ☕
+            {t("perfil.cuenta.soporte.invitar")}
           </button>
         </div>
       </Seccion>
 
       {/* Versión y desarrollador, fuera de los ajustes */}
       <div className="text-center mt-6">
-        <p className="text-muted text-xs opacity-70">Flowo v{version} — creado por NextOn Studios</p>
+        <p className="text-muted text-xs opacity-70">{t("perfil.footer", { version })}</p>
       </div>
 
       {/* Modal cambiar contraseña */}
       {modalContrasena && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-primary font-medium mb-1">Cambiar contraseña</h3>
-            <p className="text-muted text-sm mb-5">Tu cuenta: {email}</p>
+            <h3 className="text-primary font-medium mb-1">{t("perfil.contrasena.titulo")}</h3>
+            <p className="text-muted text-sm mb-5">{t("perfil.contrasena.cuenta", { email })}</p>
             {exitoContrasena ? (
               <>
                 <div className="bg-accent/10 border border-accent/30 rounded-lg p-4 text-sm text-primary">
-                  ✓ Tu contraseña se cambió correctamente.
+                  {t("perfil.contrasena.exito")}
                 </div>
                 <button onClick={() => setModalContrasena(false)}
                   className="w-full bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity mt-5">
-                  Listo
+                  {t("perfil.contrasena.listo")}
                 </button>
               </>
             ) : (
               <>
                 <div className="flex flex-col gap-3">
                   <div>
-                    <label className="text-muted text-xs mb-1 block">Contraseña actual</label>
+                    <label className="text-muted text-xs mb-1 block">{t("perfil.contrasena.actual")}</label>
                     <input type="password" value={contrasenaActual} onChange={(e) => setContrasenaActual(e.target.value)}
-                      placeholder="Tu contraseña actual"
+                      placeholder={t("perfil.contrasena.placeholderActual")}
                       className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
                   </div>
                   <div>
-                    <label className="text-muted text-xs mb-1 block">Nueva contraseña</label>
+                    <label className="text-muted text-xs mb-1 block">{t("perfil.contrasena.nueva")}</label>
                     <input type="password" value={nuevaContrasena} onChange={(e) => setNuevaContrasena(e.target.value)}
-                      placeholder="Mínimo 8 caracteres"
+                      placeholder={t("perfil.contrasena.placeholderNueva")}
                       className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
                     <ChecklistContrasena password={nuevaContrasena} />
                   </div>
                   <div>
-                    <label className="text-muted text-xs mb-1 block">Confirmar nueva contraseña</label>
+                    <label className="text-muted text-xs mb-1 block">{t("perfil.contrasena.confirmar")}</label>
                     <input type="password" value={confirmarContrasena} onChange={(e) => setConfirmarContrasena(e.target.value)}
-                      placeholder="Repite la nueva contraseña"
+                      placeholder={t("perfil.contrasena.placeholderConfirmar")}
                       className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-accent" />
                   </div>
                 </div>
@@ -1228,11 +1327,11 @@ if (cargando) {
                 <div className="flex gap-3 mt-5">
                   <button onClick={() => setModalContrasena(false)}
                     className="flex-1 text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-                    Cancelar
+                    {t("perfil.contrasena.cancelar")}
                   </button>
                   <button onClick={cambiarContrasena} disabled={cargandoContrasena}
                     className="flex-1 bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-                    {cargandoContrasena ? "Guardando..." : "Cambiar contraseña"}
+                    {cargandoContrasena ? t("perfil.contrasena.guardando") : t("perfil.contrasena.titulo")}
                   </button>
                 </div>
               </>
@@ -1245,23 +1344,22 @@ if (cargando) {
       {modalEliminar && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-primary font-medium mb-1">Eliminar cuenta</h3>
-            <p className="text-muted text-sm mb-5">Esta acción es permanente y no se puede deshacer.</p>
+            <h3 className="text-primary font-medium mb-1">{t("perfil.eliminar.titulo")}</h3>
+            <p className="text-muted text-sm mb-5">{t("perfil.eliminar.desc")}</p>
             <div className="bg-coral/10 border border-coral/30 rounded-lg p-4 text-sm text-primary mb-5">
-              Se borrarán <span className="font-medium">todos tus datos</span>: clientes, proyectos, tareas, facturas,
-              registros de tiempo e integraciones.
+              {t("perfil.eliminar.aviso1")}<span className="font-medium">{t("perfil.eliminar.aviso2")}</span>{t("perfil.eliminar.aviso3")}
             </div>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="text-muted text-xs mb-1 block">Escribe ELIMINAR para confirmar</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.eliminar.escribe")}</label>
                 <input value={confirmacionEliminar} onChange={(e) => setConfirmacionEliminar(e.target.value)}
                   placeholder="ELIMINAR"
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-coral" />
               </div>
               <div>
-                <label className="text-muted text-xs mb-1 block">Contraseña</label>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.eliminar.contrasena")}</label>
                 <input type="password" value={contrasenaEliminar} onChange={(e) => setContrasenaEliminar(e.target.value)}
-                  placeholder="Tu contraseña actual"
+                  placeholder={t("perfil.eliminar.placeholderContrasena")}
                   className="w-full bg-canvas border border-edge rounded-lg px-3 py-2.5 text-primary text-sm focus:outline-none focus:border-coral" />
               </div>
             </div>
@@ -1269,11 +1367,11 @@ if (cargando) {
             <div className="flex gap-3 mt-5">
               <button onClick={() => setModalEliminar(false)}
                 className="flex-1 text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-                Cancelar
+                {t("perfil.eliminar.cancelar")}
               </button>
               <button onClick={eliminarCuenta} disabled={cargandoEliminar}
                 className="flex-1 bg-coral text-white font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-                {cargandoEliminar ? "Eliminando..." : "Eliminar cuenta"}
+                {cargandoEliminar ? t("perfil.eliminar.eliminando") : t("perfil.eliminar.titulo")}
               </button>
             </div>
           </div>
@@ -1284,16 +1382,16 @@ if (cargando) {
       {modalCerrarSesion && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-sm">
-            <h3 className="text-primary font-medium mb-1">¿Cerrar sesión?</h3>
-            <p className="text-muted text-sm mb-6">Se cerrará tu sesión en este dispositivo. Deberás volver a iniciar sesión para entrar.</p>
+            <h3 className="text-primary font-medium mb-1">{t("perfil.cerrarSesion.titulo")}</h3>
+            <p className="text-muted text-sm mb-6">{t("perfil.cerrarSesion.desc")}</p>
             <div className="flex gap-3">
               <button onClick={() => setModalCerrarSesion(false)}
                 className="flex-1 text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-                Cancelar
+                {t("perfil.cerrarSesion.cancelar")}
               </button>
               <button onClick={cerrarSesion}
                 className="flex-1 bg-coral text-white font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                Cerrar sesión
+                {t("perfil.cerrarSesion.confirmar")}
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
@@ -20,11 +21,11 @@ interface TareaUrgente {
   deadline: string;
 }
 
-function getSaludo(nombre: string) {
-  const hora = new Date().getHours();
-  if (hora >= 6 && hora < 12) return "Buenos días, " + nombre;
-  if (hora >= 12 && hora < 18) return "Buenas tardes, " + nombre;
-  return "Buenas noches, " + nombre;
+function formatHoras(segundos: number) {
+  const h = Math.floor(segundos / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
+  if (h === 0) return m + "m";
+  return h + "h " + String(m).padStart(2, "0") + "m";
 }
 
 function getDiasRestantes(deadline: string) {
@@ -34,36 +35,6 @@ function getDiasRestantes(deadline: string) {
   const fecha = new Date(deadline);
   fecha.setHours(0, 0, 0, 0);
   return Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function formatHoras(segundos: number) {
-  const h = Math.floor(segundos / 3600);
-  const m = Math.floor((segundos % 3600) / 60);
-  if (h === 0) return m + "m";
-  return h + "h " + String(m).padStart(2, "0") + "m";
-}
-
-function formatearFechaHoy() {
-  const fecha = new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
-  return fecha.charAt(0).toUpperCase() + fecha.slice(1);
-}
-
-function ultimos7Dias() {
-  const nombres = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-  const hoy = new Date();
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(hoy);
-    d.setDate(hoy.getDate() - (6 - i));
-    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    return { key, label: nombres[d.getDay()], esHoy: i === 6 };
-  });
-}
-
-function etiquetaVencimiento(dias: number) {
-  if (dias < 0) return { color: "#F05C5C", texto: "Atrasada" };
-  if (dias === 0) return { color: "#F05C5C", texto: "Hoy" };
-  if (dias <= 2) return { color: "#F47C5C", texto: "En " + dias + " día" + (dias === 1 ? "" : "s") };
-  return { color: "#8B93A8", texto: "En " + dias + " días" };
 }
 
 const IconoIngresos = (
@@ -115,6 +86,39 @@ function TarjetaKPI({ label, valor, caption, icono, iconoClase }: {
 
 function Dashboard() {
   const moneda = useMoneda();
+  const { t, i18n } = useTranslation();
+
+  function getSaludo(nombre: string) {
+    const hora = new Date().getHours();
+    if (hora >= 6 && hora < 12) return t("dashboard.saludo.dias", { nombre });
+    if (hora >= 12 && hora < 18) return t("dashboard.saludo.tardes", { nombre });
+    return t("dashboard.saludo.noches", { nombre });
+  }
+
+  function formatearFechaHoy() {
+    const locale = i18n.language === "en" ? "en-US" : "es-ES";
+    const fecha = new Date().toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
+    return fecha.charAt(0).toUpperCase() + fecha.slice(1);
+  }
+
+  function ultimos7Dias() {
+    const nombres = t("dashboard.dias", { returnObjects: true }) as string[];
+    const hoy = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(hoy);
+      d.setDate(hoy.getDate() - (6 - i));
+      const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      return { key, label: nombres[d.getDay()], esHoy: i === 6 };
+    });
+  }
+
+  function etiquetaVencimiento(dias: number) {
+    if (dias < 0) return { color: "#F05C5C", texto: t("dashboard.vencimiento.atrasada") };
+    if (dias === 0) return { color: "#F05C5C", texto: t("dashboard.vencimiento.hoy") };
+    if (dias <= 2) return { color: "#F47C5C", texto: t("dashboard.vencimiento.enDias", { count: dias }) };
+    return { color: "#8B93A8", texto: t("dashboard.vencimiento.enDias", { count: dias }) };
+  }
+
   const [filtro, setFiltro] = useState("mes");
   const [vista, setVista] = useState<"lista" | "tarjetas">("lista");
   const [cargando, setCargando] = useState(true);
@@ -180,7 +184,7 @@ function Dashboard() {
       return {
         id: p.id,
         nombre: p.nombre,
-        cliente_nombre: clientesMap[p.cliente_id] || "Sin cliente",
+        cliente_nombre: clientesMap[p.cliente_id] || t("dashboard.sinCliente"),
         deadline: p.deadline || "",
         tareas: p.tareas_total || 0,
         tareas_completadas: p.tareas_completadas || 0,
@@ -190,12 +194,12 @@ function Dashboard() {
     setProyectos(proyectosMapeados);
 
     const tareasUrgentesMapeadas = (tareasData || [])
-      .filter((t: any) => t.deadline && getDiasRestantes(t.deadline) <= 3)
-      .map((t: any) => ({
-        id: t.id,
-        titulo: t.nombre,
-        proyecto_nombre: proyectosMap[t.proyecto_id] || "Sin proyecto",
-        deadline: t.deadline,
+      .filter((ta: any) => ta.deadline && getDiasRestantes(ta.deadline) <= 3)
+      .map((ta: any) => ({
+        id: ta.id,
+        titulo: ta.nombre,
+        proyecto_nombre: proyectosMap[ta.proyecto_id] || t("dashboard.sinProyecto"),
+        deadline: ta.deadline,
       }));
     setTareasUrgentes(tareasUrgentesMapeadas);
 
@@ -240,10 +244,10 @@ function Dashboard() {
   const vencimientos = [
     ...proyectos
       .filter((p) => p.estado !== "completado" && p.deadline)
-      .map((p) => ({ id: "p" + p.id, titulo: p.nombre, sub: p.cliente_nombre, tipo: "Proyecto", dias: getDiasRestantes(p.deadline) })),
+      .map((p) => ({ id: "p" + p.id, titulo: p.nombre, sub: p.cliente_nombre, tipo: t("dashboard.tipoProyecto"), dias: getDiasRestantes(p.deadline) })),
     ...tareasUrgentes
-      .filter((t) => t.deadline)
-      .map((t) => ({ id: "t" + t.id, titulo: t.titulo, sub: t.proyecto_nombre, tipo: "Tarea", dias: getDiasRestantes(t.deadline) })),
+      .filter((ta) => ta.deadline)
+      .map((ta) => ({ id: "t" + ta.id, titulo: ta.titulo, sub: ta.proyecto_nombre, tipo: t("dashboard.tipoTarea"), dias: getDiasRestantes(ta.deadline) })),
   ].sort((a, b) => a.dias - b.dias).slice(0, 6);
 
   const maxHoras = Math.max(1, ...horasPorDia);
@@ -251,7 +255,7 @@ function Dashboard() {
   const diasSemana = ultimos7Dias();
 
   if (cargando) {
-    return <div className="p-8"><p className="text-muted text-sm">Cargando dashboard...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">{t("dashboard.cargando")}</p></div>;
   }
 
   return (
@@ -262,7 +266,7 @@ function Dashboard() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-primary">Resumen del período</h2>
+        <h2 className="text-sm font-semibold text-primary">{t("dashboard.resumenPeriodo")}</h2>
         <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
           {["dia", "semana", "mes", "año"].map((f) => (
             <button
@@ -279,30 +283,30 @@ function Dashboard() {
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
         <TarjetaKPI
-          label="Ingresos cobrados"
+          label={t("dashboard.ingresosCobrados")}
           valor={formatearMoneda(ingresosCobrados, moneda)}
-          caption={facturasCobradas + " comprobante" + (facturasCobradas === 1 ? "" : "s") + " cobrado" + (facturasCobradas === 1 ? "" : "s")}
+          caption={t("dashboard.comprobantesCobrados", { count: facturasCobradas })}
           icono={IconoIngresos}
           iconoClase="bg-accent/10 border-accent/20 text-accent"
         />
         <TarjetaKPI
-          label="Por cobrar"
+          label={t("dashboard.porCobrar")}
           valor={formatearMoneda(porCobrar, moneda)}
-          caption={facturasPendientes + " comprobante" + (facturasPendientes === 1 ? "" : "s") + " pendiente" + (facturasPendientes === 1 ? "" : "s")}
+          caption={t("dashboard.comprobantesPendientes", { count: facturasPendientes })}
           icono={IconoPorCobrar}
           iconoClase="bg-coral/10 border-coral/20 text-coral"
         />
         <TarjetaKPI
-          label="Horas registradas"
+          label={t("dashboard.horasRegistradas")}
           valor={formatHoras(horasMes)}
-          caption="en lo que va del mes"
+          caption={t("dashboard.enLoQueVaDelMes")}
           icono={IconoHoras}
           iconoClase="bg-violet/10 border-violet/20 text-violet"
         />
         <TarjetaKPI
-          label="Proyectos activos"
+          label={t("dashboard.proyectosActivos")}
           valor={String(proyectosActivos)}
-          caption={enProceso.length + " en proceso · " + porIniciar.length + " por iniciar"}
+          caption={t("dashboard.enProcesoCaption", { count: enProceso.length }) + " · " + t("dashboard.porIniciarCaption", { count: porIniciar.length })}
           icono={IconoProyectos}
           iconoClase="bg-[#5B8DEF]/10 border-[#5B8DEF]/20 text-[#5B8DEF]"
         />
@@ -310,10 +314,10 @@ function Dashboard() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-8">
         <div className="xl:col-span-2 bg-canvas border border-edge rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-primary">Próximos vencimientos</h3>
-          <p className="text-xs font-medium text-muted mt-0.5 mb-4">Proyectos y tareas por entregar</p>
+          <h3 className="text-sm font-semibold text-primary">{t("dashboard.proximosVencimientos")}</h3>
+          <p className="text-xs font-medium text-muted mt-0.5 mb-4">{t("dashboard.proyectosYTareas")}</p>
           {vencimientos.length === 0 ? (
-            <p className="text-sm text-muted py-6 text-center">Nada urgente por ahora. Todo bajo control. ✨</p>
+            <p className="text-sm text-muted py-6 text-center">{t("dashboard.nadaUrgente")}</p>
           ) : (
             <div className="space-y-1">
               {vencimientos.map((v) => {
@@ -336,10 +340,10 @@ function Dashboard() {
         </div>
 
         <div className="bg-canvas border border-edge rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-primary">Horas por día</h3>
-          <p className="text-xs font-medium text-muted mt-0.5 mb-4">Últimos 7 días</p>
+          <h3 className="text-sm font-semibold text-primary">{t("dashboard.horasPorDia")}</h3>
+          <p className="text-xs font-medium text-muted mt-0.5 mb-4">{t("dashboard.ultimos7Dias")}</p>
           {!hayHoras ? (
-            <p className="text-sm text-muted py-6 text-center">Sin registros esta semana.</p>
+            <p className="text-sm text-muted py-6 text-center">{t("dashboard.sinRegistrosSemana")}</p>
           ) : (
             <div className="h-32 flex items-end gap-2">
               {diasSemana.map((d, i) => {
@@ -362,21 +366,21 @@ function Dashboard() {
       </div>
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-primary">Proyectos</h2>
+        <h2 className="text-sm font-semibold text-primary">{t("dashboard.proyectos")}</h2>
         <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
           <button
             onClick={() => setVista("lista")}
             className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
               (vista === "lista" ? "bg-surface text-primary" : "text-muted hover:text-primary")}
           >
-            Lista
+            {t("dashboard.lista")}
           </button>
           <button
             onClick={() => setVista("tarjetas")}
             className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
               (vista === "tarjetas" ? "bg-surface text-primary" : "text-muted hover:text-primary")}
           >
-            Tarjetas
+            {t("dashboard.tarjetas")}
           </button>
         </div>
       </div>
@@ -387,7 +391,7 @@ function Dashboard() {
           <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
             <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-gray"></div>
-              <h3 className="text-primary font-medium text-sm">Por iniciar</h3>
+              <h3 className="text-primary font-medium text-sm">{t("dashboard.porIniciar")}</h3>
               <span className="text-muted text-xs ml-1">{porIniciar.length}</span>
             </div>
             {porIniciar.map((p) => (
@@ -396,7 +400,7 @@ function Dashboard() {
                   <p className="text-primary text-sm font-medium">{p.nombre}</p>
                   <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
                 </div>
-                <p className="text-muted text-xs">Entrega: {p.deadline}</p>
+              <p className="text-muted text-xs">{t("dashboard.entrega", { fecha: p.deadline })}</p>
               </div>
             ))}
           </div>
@@ -406,7 +410,7 @@ function Dashboard() {
           <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
             <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-accent"></div>
-              <h3 className="text-primary font-medium text-sm">En proceso</h3>
+              <h3 className="text-primary font-medium text-sm">{t("dashboard.enProceso")}</h3>
               <span className="text-muted text-xs ml-1">{enProceso.length}</span>
             </div>
             {enProceso.map((p) => {
@@ -419,8 +423,8 @@ function Dashboard() {
                       <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-muted text-xs">Entrega: {p.deadline}</p>
-                      <p className="text-accent text-xs mt-0.5">{p.tareas_completadas}/{p.tareas} tareas · {pct}%</p>
+                      <p className="text-muted text-xs">{t("dashboard.entrega", { fecha: p.deadline })}</p>
+                      <p className="text-accent text-xs mt-0.5">{t("dashboard.tareasConteo", { completadas: p.tareas_completadas, total: p.tareas, pct })}</p>
                     </div>
                   </div>
                   <div className="mt-2.5 h-1 rounded-full bg-surface overflow-hidden">
@@ -436,7 +440,7 @@ function Dashboard() {
           <div className="bg-canvas rounded-2xl border border-edge overflow-hidden">
             <div className="px-5 py-3 border-b border-edge flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-violet"></div>
-              <h3 className="text-primary font-medium text-sm">Finalizados</h3>
+              <h3 className="text-primary font-medium text-sm">{t("dashboard.finalizados")}</h3>
               <span className="text-muted text-xs ml-1">{finalizados.length}</span>
             </div>
             {finalizados.map((p) => (
@@ -445,7 +449,7 @@ function Dashboard() {
                   <p className="text-primary text-sm font-medium">{p.nombre}</p>
                   <p className="text-muted text-xs mt-0.5">{p.cliente_nombre}</p>
                 </div>
-                <p className="text-violet text-xs font-medium">Completado</p>
+                <p className="text-violet text-xs font-medium">{t("dashboard.completado")}</p>
               </div>
             ))}
           </div>
@@ -453,8 +457,8 @@ function Dashboard() {
 
         {proyectos.length === 0 && (
           <div className="text-center py-14 bg-canvas rounded-2xl border border-edge">
-            <p className="text-muted text-sm">No tienes proyectos todavía.</p>
-            <p className="text-muted text-xs mt-1">Crea tu primer proyecto desde la sección Proyectos.</p>
+            <p className="text-muted text-sm">{t("dashboard.sinProyectos")}</p>
+            <p className="text-muted text-xs mt-1">{t("dashboard.creaPrimerProyecto")}</p>
           </div>
         )}
 

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
-export const NOVEDADES_VERSION = "1.1.0";
+export const NOVEDADES_VERSION = "1.2.2";
 
 export function debeMostrarNovedades(tutorialCompletado: boolean): boolean {
   if (!tutorialCompletado) return false;
@@ -17,44 +19,43 @@ interface ItemNovedad {
   descripcion: string;
 }
 
-const novedades: ItemNovedad[] = [
+function getItems(t: TFunction): ItemNovedad[] {
+  return [
+  {
+    emoji: "🌐",
+    titulo: t("novedades.items.0.titulo"),
+    descripcion: t("novedades.items.0.desc"),
+  },
+  {
+    emoji: "☁️",
+    titulo: t("novedades.items.1.titulo"),
+    descripcion: t("novedades.items.1.desc"),
+  },
   {
     emoji: "📄",
-    titulo: "Cotizaciones profesionales",
-    descripcion:
-      "Crea una cotización en minutos con servicios de tu catálogo, precios y políticas. Envíala a tu cliente por WhatsApp o correo y genera la factura o el contrato con un clic.",
+    titulo: t("novedades.items.2.titulo"),
+    descripcion: t("novedades.items.2.desc"),
   },
   {
     emoji: "✍️",
-    titulo: "Firma de contratos en línea",
-    descripcion:
-      "Envía a tu cliente un enlace corto y firma escribiendo su nombre (o dibujando su firma). El contrato firmado llega al instante.",
-  },
-  {
-    emoji: "📱",
-    titulo: "Portal del cliente rediseñado",
-    descripcion:
-      "Mucho más fácil de entender: avance del proyecto, tareas, pagos y mensajes, todo en un solo lugar.",
-  },
-  {
-    emoji: "🔔",
-    titulo: "Notificaciones en tiempo real",
-    descripcion:
-      "Te avisamos al instante cuando tu cliente firma un contrato o te deja un mensaje.",
+    titulo: t("novedades.items.3.titulo"),
+    descripcion: t("novedades.items.3.desc"),
   },
   {
     emoji: "🎨",
-    titulo: "Interfaz y comprobantes renovados",
-    descripcion:
-      "Menús desplegables con el estilo de la app y PDFs con el logo real y notas más claras.",
+    titulo: t("novedades.items.4.titulo"),
+    descripcion: t("novedades.items.4.desc"),
   },
 ];
+}
 
 interface NovedadesProps {
   onTerminar: () => void;
 }
 
 export default function Novedades({ onTerminar }: NovedadesProps) {
+  const { t } = useTranslation();
+  const novedades = getItems(t);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -74,9 +75,9 @@ export default function Novedades({ onTerminar }: NovedadesProps) {
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mb-4 bg-accent/10">
               🎉
             </div>
-            <h2 className="text-primary text-xl font-bold mb-1">¡Flowo 1.1.0 está aquí!</h2>
+            <h2 className="text-primary text-xl font-bold mb-1">{t("novedades.titulo")}</h2>
             <div className="h-0.5 w-10 rounded-full mb-4 bg-accent" />
-            <p className="text-muted2 text-sm">Esto es lo nuevo de esta versión:</p>
+            <p className="text-muted2 text-sm">{t("novedades.subtitulo")}</p>
           </div>
 
           <div className="space-y-4 mb-8">
@@ -95,7 +96,7 @@ export default function Novedades({ onTerminar }: NovedadesProps) {
             onClick={onTerminar}
             className="w-full bg-accent text-onaccent font-medium px-6 py-3 rounded-xl text-sm hover:opacity-90 transition-opacity"
           >
-            ¡Entendido!
+            {t("novedades.entendido")}
           </button>
 
         </div>

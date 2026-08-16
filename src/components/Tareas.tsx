@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
 import Select, { type SelectOption } from "./Select";
@@ -16,7 +18,17 @@ interface ProyectoOpcion {
   folder_url?: string;
 }
 
+function getPrioridadLabels(t: TFunction) {
+  return {
+    alta: t("tareas.prioridadAlta"),
+    media: t("tareas.prioridadMedia"),
+    baja: t("tareas.prioridadBaja"),
+  };
+}
+
 function Tareas() {
+  const { t } = useTranslation();
+  const prioridadLabels = getPrioridadLabels(t);
   const [tareas, setTareas] = useState<TareaTab[]>([]);
   const [proyectos, setProyectos] = useState<ProyectoOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -72,18 +84,18 @@ function Tareas() {
     ]);
     setProyectos(proyectosData || []);
     const proyectosMap = Object.fromEntries((proyectosData || []).map((p: ProyectoOpcion) => [p.id, p.nombre]));
-    const tareasMapeadas = (tareasData || []).map((t: any) => ({
-      ...t,
-      titulo: t.nombre,
-      completada: t.completada || false,
-      estado: t.estado || (t.completada ? "completada" : "pendiente"),
-      proyecto_nombre: proyectosMap[t.proyecto_id] || "Sin proyecto",
-      nota: t.nota || (Array.isArray(t.notas) && t.notas.length > 0 ? t.notas[0].texto : ""),
-      notas: Array.isArray(t.notas) ? t.notas : [],
-      subtareas: Array.isArray(t.subtareas) ? t.subtareas : [],
-      folder_id: t.folder_id || undefined,
-      folder_url: t.folder_url || undefined,
-      aprobada_cliente: t.aprobada_cliente || false,
+    const tareasMapeadas = (tareasData || []).map((td: any) => ({
+      ...td,
+      titulo: td.nombre,
+      completada: td.completada || false,
+      estado: td.estado || (td.completada ? "completada" : "pendiente"),
+      proyecto_nombre: proyectosMap[td.proyecto_id] || t("tareas.sinProyecto"),
+      nota: td.nota || (Array.isArray(td.notas) && td.notas.length > 0 ? td.notas[0].texto : ""),
+      notas: Array.isArray(td.notas) ? td.notas : [],
+      subtareas: Array.isArray(td.subtareas) ? td.subtareas : [],
+      folder_id: td.folder_id || undefined,
+      folder_url: td.folder_url || undefined,
+      aprobada_cliente: td.aprobada_cliente || false,
     }));
     setTareas(tareasMapeadas as TareaTab[]);
     setCargando(false);
@@ -102,7 +114,7 @@ function Tareas() {
     if (!proyectoId) return;
     const { data } = await supabase.from("tareas").select("completada").eq("proyecto_id", proyectoId);
     const total = (data || []).length;
-    const completadas = (data || []).filter((t) => t.completada).length;
+    const completadas = (data || []).filter((ta) => ta.completada).length;
     await supabase.from("proyectos").update({
       tareas_total: total,
       tareas_completadas: completadas,
@@ -182,15 +194,15 @@ function Tareas() {
   async function cambiarEstado(id: string, nuevoEstado: "pendiente" | "en-progreso" | "completada") {
     const esCompletada = nuevoEstado === "completada";
     await supabase.from("tareas").update({ estado: nuevoEstado, completada: esCompletada }).eq("id", id);
-    const tarea = tareas.find((t) => t.id === id);
-    const nuevasTareas = tareas.map((t) =>
-      t.id === id ? { ...t, estado: nuevoEstado, completada: esCompletada } : t
+    const tarea = tareas.find((ta) => ta.id === id);
+    const nuevasTareas = tareas.map((ta) =>
+      ta.id === id ? { ...ta, estado: nuevoEstado, completada: esCompletada } : ta
     );
     setTareas(nuevasTareas);
     if (tarea) {
-      const tareasDelProyecto = nuevasTareas.filter((t) => t.proyecto_id === tarea.proyecto_id);
+      const tareasDelProyecto = nuevasTareas.filter((ta) => ta.proyecto_id === tarea.proyecto_id);
       const total = tareasDelProyecto.length;
-      const completadasCount = tareasDelProyecto.filter((t) => t.completada).length;
+      const completadasCount = tareasDelProyecto.filter((ta) => ta.completada).length;
       await supabase.from("proyectos").update({
         tareas_total: total,
         tareas_completadas: completadasCount,
@@ -199,7 +211,7 @@ function Tareas() {
   }
 
   async function toggleTarea(id: string) {
-    const tarea = tareas.find((t) => t.id === id);
+    const tarea = tareas.find((ta) => ta.id === id);
     if (!tarea) return;
     await cambiarEstado(id, tarea.completada ? "pendiente" : "completada");
   }
@@ -217,9 +229,9 @@ function Tareas() {
       subtareas: editSubtareas,
       notas,
     }).eq("id", id);
-    setTareas(tareas.map((t) =>
-      t.id === id ? {
-        ...t,
+    setTareas(tareas.map((ta) =>
+      ta.id === id ? {
+        ...ta,
         titulo: editTitulo,
         prioridad: editPrioridad,
         deadline: editDeadline,
@@ -227,21 +239,21 @@ function Tareas() {
         subtareas: editSubtareas,
         nota,
         notas,
-      } : t
+      } : ta
     ));
     setEditandoTareaId(null);
   }
 
   async function eliminarTarea(id: string) {
-    const tarea = tareas.find((t) => t.id === id);
+    const tarea = tareas.find((ta) => ta.id === id);
     await supabase.from("tareas").delete().eq("id", id);
-    setTareas(tareas.filter((t) => t.id !== id));
+    setTareas(tareas.filter((ta) => ta.id !== id));
     if (tarea) await actualizarContadores(tarea.proyecto_id);
   }
 
   async function agregarSubtarea(tareaId: string) {
     if (!nuevoTituloSubtarea.trim()) return;
-    const tarea = tareas.find((t) => t.id === tareaId);
+    const tarea = tareas.find((ta) => ta.id === tareaId);
     if (!tarea) return;
     const subtarea: Subtarea = {
       id: Date.now(),
@@ -251,28 +263,28 @@ function Tareas() {
     };
     const nuevasSubtareas = [...tarea.subtareas, subtarea];
     await supabase.from("tareas").update({ subtareas: nuevasSubtareas }).eq("id", tareaId);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, subtareas: nuevasSubtareas } : t));
+    setTareas(tareas.map((ta) => ta.id === tareaId ? { ...ta, subtareas: nuevasSubtareas } : ta));
     setNuevoTituloSubtarea("");
     setNuevaSubtareaPublica(false);
     setSubtareaAbiertaId(null);
   }
 
   async function toggleSubtarea(tareaId: string, subtareaId: number) {
-    const tarea = tareas.find((t) => t.id === tareaId);
+    const tarea = tareas.find((ta) => ta.id === tareaId);
     if (!tarea) return;
     const nuevasSubtareas = tarea.subtareas.map((s) =>
       s.id === subtareaId ? { ...s, completada: !s.completada } : s
     );
     await supabase.from("tareas").update({ subtareas: nuevasSubtareas }).eq("id", tareaId);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, subtareas: nuevasSubtareas } : t));
+    setTareas(tareas.map((ta) => ta.id === tareaId ? { ...ta, subtareas: nuevasSubtareas } : ta));
   }
 
   async function eliminarSubtarea(tareaId: string, subtareaId: number) {
-    const tarea = tareas.find((t) => t.id === tareaId);
+    const tarea = tareas.find((ta) => ta.id === tareaId);
     if (!tarea) return;
     const nuevasSubtareas = tarea.subtareas.filter((s) => s.id !== subtareaId);
     await supabase.from("tareas").update({ subtareas: nuevasSubtareas }).eq("id", tareaId);
-    setTareas(tareas.map((t) => t.id === tareaId ? { ...t, subtareas: nuevasSubtareas } : t));
+    setTareas(tareas.map((ta) => ta.id === tareaId ? { ...ta, subtareas: nuevasSubtareas } : ta));
   }
 
   function abrirEdicion(tarea: Tarea) {
@@ -286,19 +298,19 @@ function Tareas() {
     setEditNota(tarea.nota);
   }
 
-  const tareasFiltradas = tareas.filter((t) => {
-    const coincideBusqueda = t.titulo.toLowerCase().includes(busqueda.toLowerCase());
-    const coincidePrioridad = filtroPrioridad === "todas" || t.prioridad === filtroPrioridad;
-    const coincideProyecto = !filtroProyecto || t.proyecto_id === filtroProyecto;
+  const tareasFiltradas = tareas.filter((ta) => {
+    const coincideBusqueda = ta.titulo.toLowerCase().includes(busqueda.toLowerCase());
+    const coincidePrioridad = filtroPrioridad === "todas" || ta.prioridad === filtroPrioridad;
+    const coincideProyecto = !filtroProyecto || ta.proyecto_id === filtroProyecto;
     const coincideEstado = filtroEstado === "todos" ||
-      (filtroEstado === "completada" ? (t.completada || t.estado === "completada") : t.estado === filtroEstado && !t.completada);
+      (filtroEstado === "completada" ? (ta.completada || ta.estado === "completada") : ta.estado === filtroEstado && !ta.completada);
     return coincideBusqueda && coincidePrioridad && coincideProyecto && coincideEstado;
   });
 
   const grupos = proyectos
-    .map((p) => ({ proyecto: p, tareas: tareasFiltradas.filter((t) => t.proyecto_id === p.id) }))
+    .map((p) => ({ proyecto: p, tareas: tareasFiltradas.filter((ta) => ta.proyecto_id === p.id) }))
     .filter((g) => g.tareas.length > 0);
-  const tareasSinProyecto = tareasFiltradas.filter((t) => !proyectos.some((p) => p.id === t.proyecto_id));
+  const tareasSinProyecto = tareasFiltradas.filter((ta) => !proyectos.some((p) => p.id === ta.proyecto_id));
   const filtrosActivos = filtroProyecto !== "" || filtroPrioridad !== "todas" || filtroEstado !== "todos";
 
   function limpiarFiltros() {
@@ -307,10 +319,10 @@ function Tareas() {
     setFiltroEstado("todos");
   }
 
-  const totalPendientes = tareas.filter((t) => t.estado === "pendiente" && !t.completada).length;
-  const totalEnProgreso = tareas.filter((t) => t.estado === "en-progreso" && !t.completada).length;
-  const totalCompletadas = tareas.filter((t) => t.completada || t.estado === "completada").length;
-  const totalAprobadas = tareas.filter((t) => t.aprobada_cliente).length;
+  const totalPendientes = tareas.filter((ta) => ta.estado === "pendiente" && !ta.completada).length;
+  const totalEnProgreso = tareas.filter((ta) => ta.estado === "en-progreso" && !ta.completada).length;
+  const totalCompletadas = tareas.filter((ta) => ta.completada || ta.estado === "completada").length;
+  const totalAprobadas = tareas.filter((ta) => ta.aprobada_cliente).length;
 
   const propsComunes = {
     editandoTareaId,
@@ -345,7 +357,7 @@ function Tareas() {
     onEliminarSubtarea: eliminarSubtarea,
   };
 
-  if (cargando) return <div className="p-8"><p className="text-muted text-sm">Cargando tareas...</p></div>;
+  if (cargando) return <div className="p-8"><p className="text-muted text-sm">{t("tareas.cargando")}</p></div>;
 
   return (
     <div className="p-8">
@@ -354,20 +366,20 @@ function Tareas() {
       {modalCarpeta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-primary font-medium mb-2">Carpeta ya existe</h3>
+            <h3 className="text-primary font-medium mb-2">{t("tareas.carpetaExiste")}</h3>
             <p className="text-muted text-sm mb-6">
-              Ya existe una carpeta <span className="text-primary">"{modalCarpeta.nombre}"</span> dentro de la carpeta del proyecto en Drive.
+              {t("tareas.carpetaExisteDesc1")} <span className="text-primary">"{modalCarpeta.nombre}"</span> {t("tareas.carpetaExisteDesc2")}
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={() => { modalCarpeta.resolve("usar"); setModalCarpeta(null); }}
                 className="w-full bg-surface border border-accent/40 text-primary text-sm px-4 py-3 rounded-lg hover:bg-accent/10 transition-colors text-left">
-                <p className="font-medium text-accent">Usar carpeta existente</p>
-                <p className="text-muted text-xs mt-0.5">Vincular la tarea a la carpeta que ya existe</p>
+                <p className="font-medium text-accent">{t("tareas.usarCarpetaExistente")}</p>
+                <p className="text-muted text-xs mt-0.5">{t("tareas.usarCarpetaExistenteDesc")}</p>
               </button>
               <button onClick={() => { modalCarpeta.resolve("nueva"); setModalCarpeta(null); }}
                 className="w-full bg-surface border border-edge text-primary text-sm px-4 py-3 rounded-lg hover:border-violet/40 transition-colors text-left">
-                <p className="font-medium">Crear carpeta nueva</p>
-                <p className="text-muted text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
+                <p className="font-medium">{t("tareas.crearCarpetaNueva")}</p>
+                <p className="text-muted text-xs mt-0.5">{t("tareas.crearCarpetaNuevaDesc")}</p>
               </button>
             </div>
           </div>
@@ -376,30 +388,30 @@ function Tareas() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-[26px] font-semibold tracking-tight text-primary">Tareas</h2>
+          <h2 className="text-[26px] font-semibold tracking-tight text-primary">{t("tareas.titulo")}</h2>
           <p className="text-muted mt-1">
-            {totalPendientes} pendientes · {totalEnProgreso} en progreso · {totalCompletadas} completadas
-            {totalAprobadas > 0 && <span className="text-accent"> · {totalAprobadas} aprobadas por cliente</span>}
+            {t("tareas.pendientesConteo", { count: totalPendientes })} · {t("tareas.enProgresoConteo", { count: totalEnProgreso })} · {t("tareas.completadasConteo", { count: totalCompletadas })}
+            {totalAprobadas > 0 && <span className="text-accent"> · {t("tareas.aprobadasPorCliente", { count: totalAprobadas })}</span>}
           </p>
         </div>
         <button onClick={() => setMostrarForm(!mostrarForm)}
           className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-          + Nueva tarea
+          + {t("tareas.nuevaTarea")}
         </button>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-6">
         <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre de tarea..."
+          placeholder={t("tareas.buscarPlaceholder")}
           className="flex-1 min-w-[200px] bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
         <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
           <button onClick={() => setVista("lista")}
             className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "lista" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
-            Lista
+            {t("tareas.lista")}
           </button>
           <button onClick={() => setVista("tarjetas")}
             className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "tarjetas" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
-            Tarjetas
+            {t("tareas.tarjetas")}
           </button>
         </div>
         <button onClick={() => setMostrarFiltros(!mostrarFiltros)}
@@ -410,7 +422,7 @@ function Tareas() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
           </svg>
-          Filtros
+          {t("tareas.filtros")}
           {filtrosActivos && <span className="w-2 h-2 rounded-full bg-accent" />}
         </button>
       </div>
@@ -418,37 +430,37 @@ function Tareas() {
       {mostrarFiltros && (
         <div className="bg-canvas border border-edge rounded-lg p-4 mb-6 flex flex-wrap items-end gap-4">
           <div className="min-w-[180px] flex-1">
-            <label className="text-muted text-xs mb-1 block">Proyecto</label>
+            <label className="text-muted text-xs mb-1 block">{t("tareas.proyecto")}</label>
             <Select value={filtroProyecto} onChange={setFiltroProyecto}
               options={[
-                { value: "", label: "Todos los proyectos" },
+                { value: "", label: t("tareas.todosLosProyectos") },
                 ...proyectos.map((p): SelectOption => ({ value: p.id, label: p.nombre })),
               ]} />
           </div>
           <div className="min-w-[160px]">
-            <label className="text-muted text-xs mb-1 block">Prioridad</label>
+            <label className="text-muted text-xs mb-1 block">{t("tareas.prioridad")}</label>
             <Select value={filtroPrioridad} onChange={setFiltroPrioridad}
               options={[
-                { value: "todas", label: "Todas las prioridades" },
-                { value: "alta", label: "Alta" },
-                { value: "media", label: "Media" },
-                { value: "baja", label: "Baja" },
+                { value: "todas", label: t("tareas.todasLasPrioridades") },
+                { value: "alta", label: prioridadLabels.alta },
+                { value: "media", label: prioridadLabels.media },
+                { value: "baja", label: prioridadLabels.baja },
               ]} />
           </div>
           <div className="min-w-[160px]">
-            <label className="text-muted text-xs mb-1 block">Estado</label>
+            <label className="text-muted text-xs mb-1 block">{t("tareas.estado")}</label>
             <Select value={filtroEstado} onChange={setFiltroEstado}
               options={[
-                { value: "todos", label: "Todos los estados" },
-                { value: "pendiente", label: "Pendiente" },
-                { value: "en-progreso", label: "En progreso" },
-                { value: "completada", label: "Completada" },
+                { value: "todos", label: t("tareas.todosLosEstados") },
+                { value: "pendiente", label: t("tareas.estadoPendiente") },
+                { value: "en-progreso", label: t("tareas.estadoEnProgreso") },
+                { value: "completada", label: t("tareas.estadoCompletada") },
               ]} />
           </div>
           {filtrosActivos && (
             <button onClick={limpiarFiltros}
               className="text-accent text-sm font-medium px-3 py-2 hover:opacity-90">
-              Limpiar filtros
+              {t("tareas.limpiarFiltros")}
             </button>
           )}
         </div>
@@ -456,18 +468,18 @@ function Tareas() {
 
       {mostrarForm && (
         <div className="bg-canvas border border-edge rounded-xl p-5 mb-6">
-          <h3 className="text-primary font-medium mb-4">Nueva tarea</h3>
+          <h3 className="text-primary font-medium mb-4">{t("tareas.nuevaTarea")}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-muted text-xs mb-1 block">Titulo *</label>
-              <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Diseño de pantallas"
+              <label className="text-muted text-xs mb-1 block">{t("tareas.tituloCampo")}</label>
+              <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={t("tareas.placeholderTitulo")}
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="text-muted text-xs mb-1 block">Proyecto *</label>
+              <label className="text-muted text-xs mb-1 block">{t("tareas.proyectoCampo")}</label>
               <Select value={proyectoId} onChange={(v) => { setProyectoId(v); setCrearCarpetaTarea(false); }}
                 options={[
-                  { value: "", label: "Selecciona un proyecto" },
+                  { value: "", label: t("tareas.seleccionaProyecto") },
                   ...proyectos.map((p): SelectOption => ({ value: p.id, label: p.nombre + (p.folder_id ? " 📁" : "") })),
                 ]} />
             </div>
@@ -479,7 +491,7 @@ function Tareas() {
                 <button key={p} type="button" onClick={() => setPrioridad(p)}
                   className={"text-xs px-3 py-1 rounded-md transition-colors font-medium " +
                     (prioridad === p ? prioridadConfig[p].color : "text-muted hover:text-primary")}>
-                  {prioridadConfig[p].label}
+                  {prioridadLabels[p]}
                 </button>
               ))}
             </div>
@@ -498,10 +510,10 @@ function Tareas() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
                 )}
               </svg>
-              {publica ? "Visible al cliente" : "Oculta para el cliente"}
+              {publica ? t("tareas.visibleCliente") : t("tareas.ocultaCliente")}
             </button>
             <label className="flex items-center gap-2">
-              <span className="text-muted text-xs">Fecha limite</span>
+              <span className="text-muted text-xs">{t("tareas.fechaLimite")}</span>
               <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date"
                 className="bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
             </label>
@@ -515,29 +527,29 @@ function Tareas() {
                   onChange={(e) => setCrearCarpetaTarea(e.target.checked)}
                   className="w-3.5 h-3.5 accent-accent cursor-pointer" />
                 <label htmlFor="checkbox-drive-tarea" className="cursor-pointer">
-                  <p className="text-muted text-xs">Crear carpeta en Drive para esta tarea <span className="text-muted">(opcional)</span></p>
+                  <p className="text-muted text-xs">{t("tareas.crearCarpetaDrive")} <span className="text-muted">{t("tareas.opcional")}</span></p>
                 </label>
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-4 bg-surface border border-edge rounded-lg px-3 py-2 opacity-50">
                 <div className="w-3.5 h-3.5 rounded border border-edge flex-shrink-0" />
                 <p className="text-muted text-xs">
-                  {proyectoId ? "Este proyecto no tiene carpeta en Drive" : "Selecciona un proyecto para ver las opciones de Drive"}
+                  {proyectoId ? t("tareas.sinCarpetaDrive") : t("tareas.seleccionaProyectoDrive")}
                 </p>
               </div>
             )
           )}
 
           <div className="mb-4">
-            <p className="text-muted text-xs mb-2">Subtareas</p>
+            <p className="text-muted text-xs mb-2">{t("tareas.subtareas")}</p>
             <div className="flex gap-2 mb-2">
               <input value={subtareaInput} onChange={(e) => setSubtareaInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarSubtareaInput(); } }}
-                placeholder="Subtarea de la tarea..."
+                placeholder={t("tareas.subtareaPlaceholder")}
                 className="flex-1 bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
               <button type="button" onClick={agregarSubtareaInput}
                 className="bg-surface border border-edge text-primary text-xs font-medium px-3 py-1.5 rounded-lg hover:border-accent/40">
-                Agregar
+                {t("tareas.agregar")}
               </button>
             </div>
             {nuevasSubtareas.length > 0 && (
@@ -554,9 +566,9 @@ function Tareas() {
           </div>
 
           <div className="mb-4">
-            <p className="text-muted text-xs mb-2">Nota</p>
+            <p className="text-muted text-xs mb-2">{t("tareas.nota")}</p>
             <textarea value={nuevaNotaTarea} onChange={(e) => setNuevaNotaTarea(e.target.value)}
-              placeholder="Escribe una nota para esta tarea (opcional)..."
+              placeholder={t("tareas.notaPlaceholder")}
               rows={2}
               className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-xs focus:outline-none focus:border-accent resize-none" />
           </div>
@@ -564,10 +576,10 @@ function Tareas() {
           <div className="flex gap-3">
             <button onClick={agregarTarea} disabled={guardando || !titulo || !proyectoId}
               className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50">
-              {guardando ? "Guardando..." : "Guardar tarea"}
+              {guardando ? t("tareas.guardando") : t("tareas.guardarTarea")}
             </button>
             <button onClick={() => setMostrarForm(false)} className="text-muted px-4 py-2 rounded-lg text-sm hover:text-primary">
-              Cancelar
+              {t("tareas.cancelar")}
             </button>
           </div>
         </div>
@@ -588,7 +600,7 @@ function Tareas() {
         {tareasSinProyecto.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-3">
-              <h3 className="text-primary text-sm font-semibold">Sin proyecto</h3>
+              <h3 className="text-primary text-sm font-semibold">{t("tareas.sinProyecto")}</h3>
               <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasSinProyecto.length}</span>
             </div>
             <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
@@ -599,7 +611,7 @@ function Tareas() {
         {tareasFiltradas.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted">
-              {tareas.length === 0 ? "No tienes tareas todavia. Crea la primera con el boton de arriba." : "No se encontraron tareas"}
+              {tareas.length === 0 ? t("tareas.vacio") : t("tareas.sinResultados")}
             </p>
           </div>
         )}

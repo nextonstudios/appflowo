@@ -101,6 +101,46 @@ function App() {
       const url = urls[0];
       if (!url) return;
 
+      if (url.includes("oauth/dropbox")) {
+        const parts = url.split("?");
+        if (parts[1]) {
+          const params = new URLSearchParams(parts[1]);
+          const code = params.get("code");
+          const codeVerifier = sessionStorage.getItem("dropbox_pkce_verifier");
+          if (code && codeVerifier) {
+            sessionStorage.removeItem("dropbox_pkce_verifier");
+            import("./lib/dropbox").then(({ handleDropboxCallback }) => {
+              handleDropboxCallback(code, codeVerifier).then((success) => {
+                if (success) {
+                  window.dispatchEvent(new Event("cloud-storage-updated"));
+                }
+              });
+            });
+          }
+        }
+        return;
+      }
+
+      if (url.includes("oauth/onedrive")) {
+        const parts = url.split("?");
+        if (parts[1]) {
+          const params = new URLSearchParams(parts[1]);
+          const code = params.get("code");
+          const codeVerifier = sessionStorage.getItem("onedrive_pkce_verifier");
+          if (code && codeVerifier) {
+            sessionStorage.removeItem("onedrive_pkce_verifier");
+            import("./lib/onedrive").then(({ handleOneDriveCallback }) => {
+              handleOneDriveCallback(code, codeVerifier).then((success) => {
+                if (success) {
+                  window.dispatchEvent(new Event("cloud-storage-updated"));
+                }
+              });
+            });
+          }
+        }
+        return;
+      }
+
       const hash = url.includes("#") ? url.split("#")[1] : url.split("?")[1];
       if (!hash) return;
 

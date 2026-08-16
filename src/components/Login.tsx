@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import Logo from "./Logo";
 import { contrasenaValida } from "../lib/contrasena";
@@ -59,6 +60,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
   const [mensaje, setMensaje] = useState("");
   const [terminosAceptados, setTerminosAceptados] = useState(false);
   const [mostrarPassword, setMostrarPassword] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (mensajeExterno) setMensaje(mensajeExterno);
@@ -67,7 +69,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
   async function handleSubmit() {
     if (!email || !password) return;
     if (esRegistro && !terminosAceptados) {
-      setError("Debes aceptar los términos y condiciones para continuar.");
+      setError(t("login.errorTerminos"));
       return;
     }
     setCargando(true);
@@ -75,7 +77,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
 
     if (esRegistro) {
       if (!contrasenaValida(password)) {
-        setError("La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.");
+        setError(t("login.errorContrasena"));
         setCargando(false);
         return;
       }
@@ -88,7 +90,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
         setError(error.message);
         setCargando(false);
       } else {
-        setMensaje("Revisa tu correo para confirmar tu cuenta.");
+        setMensaje(t("login.mensajeConfirmarCorreo"));
         setCargando(false);
         setTimeout(() => {
           setEsRegistro(false);
@@ -104,7 +106,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
         password,
       });
       if (error) {
-        setError("Correo o contraseña incorrectos.");
+        setError(t("login.errorCredenciales"));
       } else {
         onLogin();
       }
@@ -113,16 +115,16 @@ function Login({ onLogin, mensajeExterno }: Props) {
   }
 
   async function handleRecuperar() {
-    if (!email) { setError("Ingresa tu correo primero."); return; }
+    if (!email) { setError(t("login.errorIngresaCorreo")); return; }
     setCargando(true);
     setError("");
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: "flowo://auth/callback",
     });
     if (error) {
-      setError("No se pudo enviar el correo. Verifica que el email sea correcto.");
+      setError(t("login.errorNoEnviar"));
     } else {
-      setMensaje("Te enviamos un enlace para restablecer tu contraseña. Revisa tu correo.");
+      setMensaje(t("login.mensajeEnlaceEnviado"));
     }
     setCargando(false);
   }
@@ -133,20 +135,20 @@ function Login({ onLogin, mensajeExterno }: Props) {
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <Logo className="w-44 mx-auto mb-3" />
-            <p className="text-muted mt-2 text-sm">Plataforma para freelancers</p>
+            <p className="text-muted mt-2 text-sm">{t("login.tagline")}</p>
           </div>
 
           <div className="bg-canvas border border-edge rounded-xl p-6">
-            <h2 className="text-primary font-medium text-lg mb-2">Recuperar contraseña</h2>
-            <p className="text-muted text-xs mb-6">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
+            <h2 className="text-primary font-medium text-lg mb-2">{t("login.recuperar")}</h2>
+            <p className="text-muted text-xs mb-6">{t("login.recuperarDesc")}</p>
 
             <div className="mb-6">
-              <label className="text-muted text-xs mb-1 block">Correo</label>
+              <label className="text-muted text-xs mb-1 block">{t("login.correo")}</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@correo.com"
+                placeholder={t("login.placeholderCorreo")}
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
               />
             </div>
@@ -160,7 +162,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
                 disabled={cargando}
                 className="w-full bg-accent text-onaccent rounded-lg py-2 text-sm font-medium hover:bg-accent2 disabled:opacity-50 mb-4"
               >
-                {cargando ? "Enviando..." : "Enviar enlace"}
+                {cargando ? t("login.enviando") : t("login.enviarEnlace")}
               </button>
             )}
 
@@ -168,11 +170,11 @@ function Login({ onLogin, mensajeExterno }: Props) {
               onClick={() => { setEsRecuperar(false); setError(""); setMensaje(""); }}
               className="w-full text-muted text-xs hover:text-primary text-center"
             >
-              Volver al inicio de sesión
+              {t("login.volverLogin")}
             </button>
           </div>
 
-          <p className="text-center text-muted text-xs mt-6">Creado por NextOn Studios</p>
+          <p className="text-center text-muted text-xs mt-6">{t("login.creadoPor")}</p>
         </div>
       </div>
     );
@@ -184,40 +186,40 @@ function Login({ onLogin, mensajeExterno }: Props) {
 
         <div className="text-center mb-8">
           <img src="/logoFlowo.png" alt="Logo Flowo" className="w-44 mx-auto mb-3" />
-          <p className="text-muted mt-2 text-sm">Plataforma para freelancers</p>
+          <p className="text-muted mt-2 text-sm">{t("login.tagline")}</p>
         </div>
 
         <div className="bg-canvas border border-edge rounded-xl p-6">
           <h2 className="text-primary font-medium text-lg mb-6">
-            {esRegistro ? "Crear cuenta" : "Iniciar sesión"}
+            {esRegistro ? t("login.crearCuenta") : t("login.iniciarSesion")}
           </h2>
 
           {esRegistro && (
             <div className="mb-4">
-              <label className="text-muted text-xs mb-1 block">Nombre</label>
+              <label className="text-muted text-xs mb-1 block">{t("login.nombre")}</label>
               <input
                 type="text"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
-                placeholder="Tu nombre"
+                placeholder={t("login.placeholderNombre")}
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
               />
             </div>
           )}
 
           <div className="mb-4">
-            <label className="text-muted text-xs mb-1 block">Correo</label>
+            <label className="text-muted text-xs mb-1 block">{t("login.correo")}</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@correo.com"
+              placeholder={t("login.placeholderCorreo")}
               className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent"
             />
           </div>
 
           <div className="mb-2">
-            <label className="text-muted text-xs mb-1 block">Contraseña</label>
+            <label className="text-muted text-xs mb-1 block">{t("login.contrasena")}</label>
             <InputPassword
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -233,7 +235,7 @@ function Login({ onLogin, mensajeExterno }: Props) {
                 onClick={() => { setEsRecuperar(true); setError(""); }}
                 className="text-muted text-xs hover:text-accent"
               >
-                ¿Olvidaste tu contraseña?
+                {t("login.olvidaste")}
               </button>
             </div>
           )}
@@ -248,10 +250,10 @@ function Login({ onLogin, mensajeExterno }: Props) {
                 className="mt-1 accent-accent"
               />
               <label htmlFor="terminos" className="text-muted text-xs cursor-pointer">
-                Acepto los{" "}
+                {t("login.aceptoT")}{" "}
                 <a href="https://appflowo.com/terminos-y-condiciones-de-uso/" target="_blank" rel="noopener noreferrer"
                   className="text-accent hover:underline">
-                  términos y condiciones
+                  {t("login.terminos")}
                 </a>
               </label>
             </div>
@@ -265,21 +267,21 @@ function Login({ onLogin, mensajeExterno }: Props) {
             disabled={cargando || (esRegistro && !terminosAceptados)}
             className="w-full bg-accent text-onaccent rounded-lg py-2 text-sm font-medium hover:bg-accent2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
           >
-            {cargando ? "Cargando..." : esRegistro ? "Crear cuenta" : "Entrar"}
+            {cargando ? t("login.cargando") : esRegistro ? t("login.crearCuenta") : t("login.entrar")}
           </button>
 
           <p className="text-center text-muted text-xs mt-4">
-            {esRegistro ? "¿Ya tienes cuenta?" : "¿No tienes cuenta?"}{" "}
+            {esRegistro ? t("login.yaTienesCuenta") : t("login.noTienesCuenta")}{" "}
             <button
               onClick={() => { setEsRegistro(!esRegistro); setError(""); setMensaje(""); setTerminosAceptados(false); }}
               className="text-accent hover:underline"
             >
-              {esRegistro ? "Inicia sesión" : "Regístrate"}
+              {esRegistro ? t("login.iniciaSesion") : t("login.registrate")}
             </button>
           </p>
         </div>
 
-        <p className="text-center text-muted text-xs mt-6">Creado por NextOn Studios</p>
+        <p className="text-center text-muted text-xs mt-6">{t("login.creadoPor")}</p>
       </div>
     </div>
   );

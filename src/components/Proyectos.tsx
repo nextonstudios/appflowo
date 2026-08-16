@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useTranslation, Trans } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import Select from "./Select";
 import DetalleProyecto from "./DetalleProyecto";
@@ -34,12 +36,14 @@ interface ClienteOpcion {
   folder_url?: string;
 }
 
-const estadoConfig = {
-  "activo": { label: "En tiempo", color: "text-accent bg-accent/10" },
-  "en-riesgo": { label: "En riesgo", color: "text-coral bg-coral/10" },
-  "retrasado": { label: "Retrasado", color: "text-red-400 bg-red-400/10" },
-  "completado": { label: "Completado", color: "text-muted bg-gray/10" },
-};
+function getEstadoConfig(t: TFunction) {
+  return {
+    "activo": { label: t("proyectos.estadoActivo"), color: "text-accent bg-accent/10" },
+    "en-riesgo": { label: t("proyectos.estadoEnRiesgo"), color: "text-coral bg-coral/10" },
+    "retrasado": { label: t("proyectos.estadoRetrasado"), color: "text-red-400 bg-red-400/10" },
+    "completado": { label: t("proyectos.estadoCompletado"), color: "text-muted bg-gray/10" },
+  };
+}
 
 function getDiasRestantes(deadline: string) {
   const hoy = new Date();
@@ -55,6 +59,8 @@ interface ProyectosProps {
 
 function Proyectos({ onGenerarFactura }: ProyectosProps) {
   const moneda = useMoneda();
+  const { t } = useTranslation();
+  const estadoConfig = getEstadoConfig(t);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [clientes, setClientes] = useState<ClienteOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -107,7 +113,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
     const proyectosMapeados = (proyectosData || []).map((p: any) => ({
       ...p,
-      cliente_nombre: clientesMap[p.cliente_id] || "Cliente desconocido",
+      cliente_nombre: clientesMap[p.cliente_id] || t("proyectos.clienteDesconocido"),
       servicios: Array.isArray(p.servicios) ? p.servicios : [],
       tareas: p.tareas_total || 0,
       tareas_completadas: p.tareas_completadas || 0,
@@ -251,7 +257,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
   }
 
   if (cargando) {
-    return <div className="p-8"><p className="text-muted text-sm">Cargando proyectos...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">{t("proyectos.cargando")}</p></div>;
   }
 
   return (
@@ -261,22 +267,24 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
       {modalCarpeta && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-primary font-medium mb-2">Subcarpeta ya existe</h3>
+            <h3 className="text-primary font-medium mb-2">{t("proyectos.carpetaExisteTitulo")}</h3>
             <p className="text-muted text-sm mb-6">
-              Ya existe una carpeta <span className="text-primary">"{modalCarpeta.nombre}"</span> dentro de la carpeta del cliente en Drive. ¿Qué deseas hacer?
+              <Trans i18nKey="proyectos.carpetaExiste" values={{ nombre: modalCarpeta.nombre }}>
+                Ya existe una carpeta <span className="text-primary">"X"</span> dentro de la carpeta del cliente en Drive. ¿Qué deseas hacer?
+              </Trans>
             </p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => { modalCarpeta.resolve("usar"); setModalCarpeta(null); }}
                 className="w-full bg-surface border border-accent/40 text-primary text-sm px-4 py-3 rounded-lg hover:bg-accent/10 transition-colors text-left">
-                <p className="font-medium text-accent">Usar carpeta existente</p>
-                <p className="text-muted text-xs mt-0.5">Vincular el proyecto a la carpeta que ya existe</p>
+                <p className="font-medium text-accent">{t("proyectos.usarCarpetaExistente")}</p>
+                <p className="text-muted text-xs mt-0.5">{t("proyectos.usarCarpetaExistenteDesc")}</p>
               </button>
               <button
                 onClick={() => { modalCarpeta.resolve("nueva"); setModalCarpeta(null); }}
                 className="w-full bg-surface border border-edge text-primary text-sm px-4 py-3 rounded-lg hover:border-violet/40 transition-colors text-left">
-                <p className="font-medium">Crear subcarpeta nueva</p>
-                <p className="text-muted text-xs mt-0.5">Se creará una carpeta adicional con el mismo nombre</p>
+                <p className="font-medium">{t("proyectos.crearSubcarpetaNueva")}</p>
+                <p className="text-muted text-xs mt-0.5">{t("proyectos.crearSubcarpetaNuevaDesc")}</p>
               </button>
             </div>
           </div>
@@ -285,8 +293,8 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
-          <h1 className="text-[26px] font-semibold tracking-tight text-primary">Proyectos</h1>
-          <p className="text-sm font-medium text-muted mt-1">{proyectos.length} proyecto{proyectos.length === 1 ? "" : "s"} en total</p>
+          <h1 className="text-[26px] font-semibold tracking-tight text-primary">{t("proyectos.titulo")}</h1>
+          <p className="text-sm font-medium text-muted mt-1">{t("proyectos.totalProyectos", { count: proyectos.length })}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -297,23 +305,23 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 ? "bg-surface border border-edge text-primary hover:border-coral/40"
                 : "bg-accent text-onaccent hover:opacity-90")}
           >
-            {guardando ? "Creando proyecto..." : mostrarForm ? "Cancelar" : "+ Nuevo proyecto"}
+            {guardando ? t("proyectos.creandoProyecto") : mostrarForm ? t("proyectos.cancelar") : "+ " + t("proyectos.nuevoProyecto")}
           </button>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-6">
         <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por proyecto o cliente..."
+          placeholder={t("proyectos.placeholderBuscar")}
           className="flex-1 min-w-[200px] bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
         <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5">
           <button onClick={() => setVista("lista")}
             className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "lista" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
-            Lista
+            {t("proyectos.vistaLista")}
           </button>
           <button onClick={() => setVista("tarjetas")}
             className={"text-xs px-2.5 py-1 rounded-md transition-colors font-medium " + (vista === "tarjetas" ? "bg-surface text-primary" : "text-muted hover:text-primary")}>
-            Tarjetas
+            {t("proyectos.vistaTarjetas")}
           </button>
         </div>
         <button onClick={() => setFiltrosAbierto(!filtrosAbierto)}
@@ -324,7 +332,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
           </svg>
-          Filtros
+          {t("proyectos.filtros")}
           {filtroEstado !== "todos" && <span className="w-2 h-2 rounded-full bg-accent" />}
         </button>
       </div>
@@ -332,20 +340,20 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
       {filtrosAbierto && (
         <div className="bg-canvas border border-edge rounded-lg p-4 mb-6 flex flex-wrap items-end gap-4">
           <div className="min-w-[180px] flex-1">
-            <label className="text-muted text-xs mb-1 block">Estado</label>
+            <label className="text-muted text-xs mb-1 block">{t("proyectos.estado")}</label>
             <Select value={filtroEstado} onChange={setFiltroEstado}
               options={[
-                { value: "todos", label: "Todos los estados" },
-                { value: "activo", label: "En tiempo" },
-                { value: "en-riesgo", label: "En riesgo" },
-                { value: "retrasado", label: "Retrasado" },
-                { value: "completado", label: "Completado" },
+                { value: "todos", label: t("proyectos.todosLosEstados") },
+                { value: "activo", label: estadoConfig["activo"].label },
+                { value: "en-riesgo", label: estadoConfig["en-riesgo"].label },
+                { value: "retrasado", label: estadoConfig["retrasado"].label },
+                { value: "completado", label: estadoConfig["completado"].label },
               ]} />
           </div>
           {filtroEstado !== "todos" && (
             <button onClick={() => setFiltroEstado("todos")}
               className="text-accent text-sm font-medium px-3 py-2 hover:opacity-90">
-              Limpiar filtros
+              {t("proyectos.limpiarFiltros")}
             </button>
           )}
         </div>
@@ -353,29 +361,29 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
       {mostrarForm && (
         <div className="bg-canvas border border-edge rounded-2xl p-5 mb-6">
-          <h3 className="text-primary font-semibold mb-1">Nuevo proyecto</h3>
-          <p className="text-muted text-xs mb-4">Solo el nombre y el cliente son obligatorios. Lo demás lo puedes completar después.</p>
+          <h3 className="text-primary font-semibold mb-1">{t("proyectos.nuevoProyecto")}</h3>
+          <p className="text-muted text-xs mb-4">{t("proyectos.soloNombreCliente")}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
             <div>
-              <label className="text-muted text-xs mb-1 block">Nombre del proyecto *</label>
-              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Rediseño web"
+              <label className="text-muted text-xs mb-1 block">{t("proyectos.nombreProyecto")} *</label>
+              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder={t("proyectos.placeholderNombreProyecto")}
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="text-muted text-xs mb-1 block">Cliente *</label>
+              <label className="text-muted text-xs mb-1 block">{t("proyectos.cliente")} *</label>
               <Select value={clienteId} onChange={setClienteId}
                 options={[
-                  { value: "", label: "Selecciona un cliente" },
+                  { value: "", label: t("proyectos.seleccionaCliente") },
                   ...clientes.map((c) => ({ value: c.id, label: c.nombre + (c.folder_id ? " 📁" : "") })),
                 ]} />
             </div>
             <div>
-              <label className="text-muted text-xs mb-1 block">Fecha de inicio</label>
+              <label className="text-muted text-xs mb-1 block">{t("proyectos.fechaInicio")}</label>
               <input value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} type="date"
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="text-muted text-xs mb-1 block">Fecha de entrega</label>
+              <label className="text-muted text-xs mb-1 block">{t("proyectos.fechaEntrega")}</label>
               <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date"
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
@@ -383,7 +391,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
           {/* Crear subcarpeta en */}
           <div className="mb-4">
-            <p className="text-muted2 text-xs font-medium mb-2">Crear carpeta en</p>
+            <p className="text-muted2 text-xs font-medium mb-2">{t("proyectos.crearCarpetaEn")}</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <button
                 type="button"
@@ -409,26 +417,39 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 <div className="flex items-center gap-2.5 mb-1.5">
                   <div className="w-8 h-8 rounded-lg bg-[#34A853]/15 flex items-center justify-center flex-shrink-0 text-[#34A853]">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z" />
+                      <path d="M12.01 1.485c-2.082 0-3.754.02-3.743.047.01.02 1.708 3.001 3.774 6.62l3.76 6.574h3.76c2.081 0 3.753-.02 3.742-.047-.005-.02-1.708-3.001-3.775-6.62l-3.76-6.574zm-4.76 1.73a789.828 789.861 0 0 0-3.63 6.319L0 15.868l1.89 3.298 1.885 3.297 3.62-6.335 3.618-6.33-1.88-3.287C8.1 4.704 7.255 3.22 7.25 3.214zm2.259 12.653-.203.348c-.114.198-.96 1.672-1.88 3.287a423.93 423.948 0 0 1-1.698 2.97c-.01.026 3.24.042 7.222.042h7.244l1.796-3.157c.992-1.734 1.85-3.23 1.906-3.323l.104-.167h-7.249z"/>
                     </svg>
                   </div>
                   <div>
                     <p className="text-primary text-sm font-medium leading-none">Google Drive</p>
                     <p className="text-muted text-[11px] mt-1">
-                      {!hayDrive ? "Sin conectar" : !clienteId ? "Selecciona un cliente" : !clienteTieneCarpeta ? "Cliente sin carpeta" : "Conectado"}
+                      {!hayDrive ? t("proyectos.sinConectar") : !clienteId ? t("proyectos.seleccionaCliente") : !clienteTieneCarpeta ? t("proyectos.clienteSinCarpeta") : t("proyectos.conectado")}
                     </p>
                   </div>
                 </div>
                 <p className="text-muted text-[11px]">
                   {hayDrive && clienteId && clienteTieneCarpeta
                     ? crearCarpetaDrive
-                      ? <>Se creará <span className="text-accent">"{nombre || "nombre del proyecto"}"</span> dentro de la carpeta de <span className="text-primary">{clienteSeleccionado?.nombre}</span></>
-                      : "Toca para activar la creación automática"
+                      ? (
+                          <Trans i18nKey="proyectos.seCrearaCarpeta"
+                            values={{ nombre: nombre || t("proyectos.nombreProyectoFallback"), cliente: clienteSeleccionado?.nombre }}>
+                            Se creará <span className="text-accent">"X"</span> dentro de la carpeta de <span className="text-primary">Y</span>
+                          </Trans>
+                        )
+                      : t("proyectos.tocaActivarCreacion")
                     : !hayDrive
-                      ? <>Conecta tu Drive en <span className="text-accent">Perfil → Almacenamiento</span></>
+                      ? (
+                          <Trans i18nKey="proyectos.conectaDriveEn">
+                            Conecta tu Drive en <span className="text-accent">Perfil → Almacenamiento</span>
+                          </Trans>
+                        )
                       : !clienteId
-                        ? "Selecciona un cliente para ver las opciones de Drive"
-                        : <>Este cliente no tiene carpeta. Créala desde <span className="text-accent">Clientes</span></>}
+                        ? t("proyectos.seleccionaClienteDrive")
+                        : (
+                            <Trans i18nKey="proyectos.clienteSinCarpetaCrear">
+                              Este cliente no tiene carpeta. Créala desde <span className="text-accent">Clientes</span>
+                            </Trans>
+                          )}
                 </p>
               </button>
 
@@ -436,36 +457,44 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 <div className="flex items-center gap-2.5 mb-1.5">
                   <div className="w-8 h-8 rounded-lg bg-[#0061FF]/15 flex items-center justify-center flex-shrink-0 text-[#0061FF]">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z" />
+                      <path d="M6 1.807L0 5.629l6 3.822 6.001-3.822L6 1.807zM18 1.807l-6 3.822 6 3.822 6-3.822-6-3.822zM0 13.274l6 3.822 6.001-3.822L6 9.452l-6 3.822zM18 9.452l-6 3.822 6 3.822 6-3.822-6-3.822zM6 18.371l6.001 3.822 6-3.822-6-3.822L6 18.371z"/>
                     </svg>
                   </div>
                   <div>
                     <p className="text-primary text-sm font-medium leading-none">Dropbox</p>
-                    <p className="text-muted text-[11px] mt-1">Sin conectar</p>
+                    <p className="text-muted text-[11px] mt-1">{t("proyectos.sinConectar")}</p>
                   </div>
                 </div>
-                <p className="text-muted text-[11px]">Conecta en <span className="text-accent">Perfil → Almacenamiento</span></p>
+                <p className="text-muted text-[11px]">
+                  <Trans i18nKey="proyectos.conectaEn">
+                    Conecta en <span className="text-accent">Perfil → Almacenamiento</span>
+                  </Trans>
+                </p>
               </div>
 
               <div className="relative text-left rounded-xl border border-edge bg-surface p-3.5 opacity-50 cursor-not-allowed">
                 <div className="flex items-center gap-2.5 mb-1.5">
                   <div className="w-8 h-8 rounded-lg bg-[#0078D4]/15 flex items-center justify-center flex-shrink-0 text-[#0078D4]">
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z" />
+                      <path d="M19.453 9.95q.961.058 1.787.468.826.41 1.442 1.066.615.657.966 1.512.352.856.352 1.816 0 1.008-.387 1.893-.386.885-1.049 1.547-.662.662-1.546 1.049-.885.387-1.893.387H6q-1.242 0-2.332-.475-1.09-.475-1.904-1.29-.815-.814-1.29-1.903Q0 14.93 0 13.688q0-.985.31-1.887.311-.903.862-1.658.55-.756 1.324-1.325.774-.568 1.711-.861.434-.129.85-.187.416-.06.861-.082h.012q.515-.786 1.207-1.413.691-.627 1.5-1.066.808-.44 1.705-.668.896-.229 1.845-.229 1.278 0 2.456.417 1.177.416 2.144 1.16.967.744 1.658 1.78.692 1.038 1.008 2.28zm-7.265-4.137q-1.325 0-2.52.544-1.195.545-2.04 1.565.446.117.85.299.405.181.792.416l4.78 2.86 2.731-1.15q.27-.117.545-.204.276-.088.58-.147-.293-.937-.855-1.705-.563-.768-1.319-1.318-.755-.551-1.658-.856-.902-.304-1.886-.304zM2.414 16.395l9.914-4.184-3.832-2.297q-.586-.351-1.23-.539-.645-.188-1.325-.188-.914 0-1.722.364-.809.363-1.412.978-.604.616-.955 1.436-.352.82-.352 1.723 0 .703.234 1.423.235.721.68 1.284zm16.711 1.793q.563 0 1.078-.176.516-.176.961-.516l-7.23-4.324-10.301 4.336q.527.328 1.13.504.604.175 1.237.175zm3.012-1.852q.363-.727.363-1.523 0-.774-.293-1.407t-.791-1.072q-.498-.44-1.166-.68-.668-.24-1.406-.24-.422 0-.838.1t-.815.252q-.398.152-.785.334-.386.181-.761.345Z"/>
                     </svg>
                   </div>
                   <div>
                     <p className="text-primary text-sm font-medium leading-none">OneDrive</p>
-                    <p className="text-muted text-[11px] mt-1">Sin conectar</p>
+                    <p className="text-muted text-[11px] mt-1">{t("proyectos.sinConectar")}</p>
                   </div>
                 </div>
-                <p className="text-muted text-[11px]">Conecta en <span className="text-accent">Perfil → Almacenamiento</span></p>
+                <p className="text-muted text-[11px]">
+                  <Trans i18nKey="proyectos.conectaEn">
+                    Conecta en <span className="text-accent">Perfil → Almacenamiento</span>
+                  </Trans>
+                </p>
               </div>
             </div>
           </div>
 
           <div className="mb-4">
-            <label className="text-muted text-xs mb-2 block">Servicios del catálogo — clic para agregar</label>
+            <label className="text-muted text-xs mb-2 block">{t("proyectos.serviciosCatalogo")}</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {catalogo.map((s) => (
                 <button key={s.id} onClick={() => agregarServicioCatalogo(s)}
@@ -481,19 +510,19 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
             {serviciosSeleccionados.length > 0 && (
               <div className="bg-surface border border-edge rounded-lg p-3 mb-3">
-                <p className="text-muted text-xs mb-2">Servicios agregados — puedes editar el precio</p>
+                <p className="text-muted text-xs mb-2">{t("proyectos.serviciosAgregados")}</p>
                 <div className="space-y-2">
                   {serviciosSeleccionados.map((s, index) => (
                     <div key={index} className="flex items-center gap-3">
                       <p className="text-primary text-xs flex-1">{s.nombre}</p>
-                      <span className="text-muted text-xs">{s.modo === "fijo" ? "Fijo" : "Por hora"}</span>
+                      <span className="text-muted text-xs">{s.modo === "fijo" ? t("proyectos.modoFijo") : t("proyectos.modoPorHora")}</span>
                       <div className="flex items-center gap-1">
                         <span className="text-muted text-xs">$</span>
                         <input value={s.precio} onChange={(e) => actualizarPrecioServicio(index, e.target.value)}
                           type="number"
                           className="w-20 bg-canvas border border-edge rounded px-2 py-1 text-primary text-xs focus:outline-none focus:border-accent" />
                       </div>
-                      <button onClick={() => quitarServicio(index)} className="text-muted text-xs hover:text-coral">Quitar</button>
+                      <button onClick={() => quitarServicio(index)} className="text-muted text-xs hover:text-coral">{t("proyectos.quitar")}</button>
                     </div>
                   ))}
                 </div>
@@ -501,23 +530,23 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
             )}
 
             <div className="border border-dashed border-edge rounded-lg p-3">
-              <p className="text-muted text-xs mb-2">Agregar servicio que no está en el catálogo</p>
+              <p className="text-muted text-xs mb-2">{t("proyectos.agregarServicioNoCatalogo")}</p>
               <div className="flex gap-2">
                 <input value={servicioCustom} onChange={(e) => setServicioCustom(e.target.value)}
-                  placeholder="Nombre del servicio"
+                  placeholder={t("proyectos.nombreServicio")}
                   className="flex-1 bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
                 <Select value={modoCustom} onChange={(v) => setModoCustom(v as "fijo" | "horas")}
                   triggerClassName="bg-surface border border-edge rounded-lg px-2 py-1.5 text-primary text-xs focus:outline-none focus:border-accent flex items-center gap-2"
                   options={[
-                    { value: "fijo", label: "Fijo" },
-                    { value: "horas", label: "Por hora" },
+                    { value: "fijo", label: t("proyectos.modoFijo") },
+                    { value: "horas", label: t("proyectos.modoPorHora") },
                   ]} />
                 <input value={precioCustom} onChange={(e) => setPrecioCustom(e.target.value)}
-                  placeholder="Precio" type="number"
+                  placeholder={t("proyectos.precio")} type="number"
                   className="w-24 bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
                 <button onClick={agregarServicioCustom}
                   className="bg-accent text-onaccent font-medium px-3 py-1.5 rounded-lg text-xs hover:opacity-90">
-                  Agregar
+                  {t("proyectos.agregar")}
                 </button>
               </div>
             </div>
@@ -525,11 +554,11 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
           {/* Nota inicial */}
           <div className="mb-4">
-            <label className="text-muted2 text-xs font-medium mb-1.5 block">Nota</label>
+            <label className="text-muted2 text-xs font-medium mb-1.5 block">{t("proyectos.nota")}</label>
             <textarea
               value={notaInicial}
               onChange={(e) => setNotaInicial(e.target.value)}
-              placeholder="Escribe una nota privada sobre este proyecto (opcional)..."
+              placeholder={t("proyectos.placeholderNota")}
               rows={2}
               className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent resize-none"
             />
@@ -539,11 +568,11 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
             <button onClick={agregarProyecto}
               disabled={guardando || !nombre || !clienteId || serviciosSeleccionados.length === 0}
               className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50">
-              {guardando ? "Creando proyecto..." : "Crear proyecto"}
+              {guardando ? t("proyectos.creandoProyecto") : t("proyectos.crearProyecto")}
             </button>
             <button onClick={cerrarForm}
               className="text-muted px-4 py-2 rounded-lg text-sm hover:text-primary">
-              Cancelar
+              {t("proyectos.cancelar")}
             </button>
           </div>
         </div>
@@ -551,7 +580,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
       {urgentes.length > 0 && (
         <div className="bg-coral/10 border border-coral/30 rounded-xl p-4 mb-6">
-          <h3 className="text-coral font-medium text-sm mb-3">Urgente — vence en 3 días o menos</h3>
+          <h3 className="text-coral font-medium text-sm mb-3">{t("proyectos.urgenteVence")}</h3>
           <div className="space-y-2">
             {urgentes.map((p) => (
               <div key={p.id} onClick={() => setProyectoSeleccionado(p)}
@@ -561,7 +590,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                   <p className="text-muted text-xs">{p.cliente_nombre}</p>
                 </div>
                 <span className="text-coral text-xs font-medium">
-                  {getDiasRestantes(p.deadline) === 0 ? "Hoy" : getDiasRestantes(p.deadline) + " días"}
+                  {getDiasRestantes(p.deadline) === 0 ? t("proyectos.hoy") : t("proyectos.diasRestantes", { count: getDiasRestantes(p.deadline) })}
                 </span>
               </div>
             ))}
@@ -589,7 +618,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 </div>
                 <div className="text-right">
                   <p className="text-primary text-sm font-medium">{formatearMoneda(totalPresupuesto, moneda)}</p>
-                  {proyecto.deadline && <p className="text-muted text-xs">Entrega: {proyecto.deadline}</p>}
+                  {proyecto.deadline && <p className="text-muted text-xs">{t("proyectos.entrega", { fecha: proyecto.deadline })}</p>}
                 </div>
                 <div className="w-24">
                   <div className="flex justify-between text-xs text-muted mb-1">
@@ -618,8 +647,8 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
               </div>
               <div className="mb-3">
                 <div className="flex justify-between text-xs text-muted mb-1">
-                  <span>Progreso</span>
-                  <span>{proyecto.tareas_completadas}/{proyecto.tareas} tareas</span>
+                  <span>{t("proyectos.progreso")}</span>
+                  <span>{t("proyectos.tareasConteo", { completadas: proyecto.tareas_completadas, total: proyecto.tareas })}</span>
                 </div>
                 <div className="w-full bg-surface rounded-full h-1.5">
                   <div className="bg-accent h-1.5 rounded-full" style={{ width: progreso + "%" }} />
@@ -627,7 +656,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
               </div>
               <div className="flex items-center justify-between text-xs text-muted">
                 <span className="text-primary font-medium">{formatearMoneda(totalPresupuesto, moneda)}</span>
-                {proyecto.deadline && <p>Entrega: {proyecto.deadline}</p>}
+                {proyecto.deadline && <p>{t("proyectos.entrega", { fecha: proyecto.deadline })}</p>}
               </div>
             </div>
           );
@@ -637,7 +666,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
       {proyectosFiltrados.length === 0 && (
         <div className="text-center py-12">
           <p className="text-muted">
-            {proyectos.length === 0 ? "No tienes proyectos todavía. Crea el primero con el botón de arriba." : "No se encontraron proyectos"}
+            {proyectos.length === 0 ? t("proyectos.sinProyectos") : t("proyectos.sinResultados")}
           </p>
         </div>
       )}

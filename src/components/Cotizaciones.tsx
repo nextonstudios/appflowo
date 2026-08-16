@@ -5,9 +5,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import jsPDF from "jspdf";
 import logoFlowo from "../assets/logoFlowo.png?inline";
 import { sendNotification } from "@tauri-apps/plugin-notification";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
-import { POLITICAS_POR_DEFECTO, construirPoliticas, type Politicas } from "../lib/terminos";
+import { politicasPorDefecto, construirPoliticas, type Politicas } from "../lib/terminos";
 
 interface Item {
   descripcion: string;
@@ -43,12 +45,14 @@ interface Props {
   onIrAFacturas?: () => void;
 }
 
-const estadoConfig = {
-  "pendiente": { label: "Pendiente", color: "text-violet bg-violet/10" },
-  "aprobada": { label: "Aprobada", color: "text-accent bg-accent/10" },
-  "rechazada": { label: "Rechazada", color: "text-coral bg-coral/10" },
-  "vencida": { label: "Vencida", color: "text-muted bg-gray/10" },
-};
+function getEstadoConfig(t: TFunction) {
+  return {
+    "pendiente": { label: t("cotizaciones.estados.pendiente"), color: "text-violet bg-violet/10" },
+    "aprobada": { label: t("cotizaciones.estados.aprobada"), color: "text-accent bg-accent/10" },
+    "rechazada": { label: t("cotizaciones.estados.rechazada"), color: "text-coral bg-coral/10" },
+    "vencida": { label: t("cotizaciones.estados.vencida"), color: "text-muted bg-gray/10" },
+  };
+}
 
 const bordeEstado = {
   "pendiente": "border-l-violet",
@@ -82,7 +86,9 @@ function getTotal(c: Cotizacion) {
 }
 
 function Cotizaciones({ onIrAFacturas }: Props) {
+  const { t } = useTranslation();
   const monedaUi = useMoneda();
+  const estadoConfig = getEstadoConfig(t);
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [servicios, setServicios] = useState<ServicioCatalogo[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -101,7 +107,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
   const [notas, setNotas] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
-  const [politicas, setPoliticas] = useState<Politicas>({ ...POLITICAS_POR_DEFECTO });
+  const [politicas, setPoliticas] = useState<Politicas>(politicasPorDefecto(t));
   const [politicasCustom, setPoliticasCustom] = useState<string | null>(null);
   const [modalPoliticas, setModalPoliticas] = useState(false);
   const [textoCustomTemp, setTextoCustomTemp] = useState("");
@@ -156,7 +162,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     setCatalogoSel("");
     setFechaValidez(sumarDias(15));
     setNotas("");
-    setPoliticas({ ...POLITICAS_POR_DEFECTO });
+    setPoliticas(politicasPorDefecto(t));
     setPoliticasCustom(null);
     setErrorForm(null);
     setMostrarForm(true);
@@ -171,7 +177,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     setCatalogoSel("");
     setFechaValidez(c.fecha_validez || sumarDias(15));
     setNotas(c.notas || "");
-    setPoliticas({ ...POLITICAS_POR_DEFECTO, ...(c.politicas || {}) });
+    setPoliticas({ ...politicasPorDefecto(t), ...(c.politicas || {}) });
     setPoliticasCustom(c.politicas_custom || null);
     setErrorForm(null);
     setMostrarForm(true);
@@ -207,12 +213,12 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
   async function guardarCotizacion() {
     if (!clienteNombre.trim()) {
-      setErrorForm("Escribe el nombre del cliente.");
+      setErrorForm(t("cotizaciones.errorNombreCliente"));
       return;
     }
     const itemsValidos = items.filter((i) => i.descripcion.trim() && (i.cantidad || 0) > 0);
     if (itemsValidos.length === 0) {
-      setErrorForm("Agrega al menos un ítem con descripción y cantidad.");
+      setErrorForm(t("cotizaciones.errorSinItems"));
       return;
     }
     setGuardando(true);
@@ -240,7 +246,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     if (editandoId) {
       const { error } = await supabase.from("cotizaciones").update(payload).eq("id", editandoId);
       if (error) {
-        setErrorForm("No se pudo guardar: " + error.message);
+        setErrorForm(t("cotizaciones.errorGuardar") + error.message);
       } else {
         setCotizaciones(cotizaciones.map((c) => c.id === editandoId ? { ...c, ...payload, abierta: c.abierta } : c));
         setMostrarForm(false);
@@ -249,7 +255,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     } else {
       const { data, error } = await supabase.from("cotizaciones").insert(payload).select().single();
       if (error) {
-        setErrorForm("No se pudo guardar: " + error.message);
+        setErrorForm(t("cotizaciones.errorGuardar") + error.message);
       } else if (data) {
         setCotizaciones([{ ...data, items: Array.isArray(data.items) ? data.items : [], abierta: false }, ...cotizaciones]);
         setMostrarForm(false);
@@ -283,7 +289,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       fecha_emision: hoyISO(),
       fecha_validez: sumarDias(15),
       moneda: c.moneda || monedaUi,
-      politicas: { ...POLITICAS_POR_DEFECTO, ...(c.politicas || {}) },
+      politicas: { ...politicasPorDefecto(t), ...(c.politicas || {}) },
       politicas_custom: c.politicas_custom || null,
     };
     const { data } = await supabase.from("cotizaciones").insert(nuevo).select().single();
@@ -295,11 +301,11 @@ function Cotizaciones({ onIrAFacturas }: Props) {
   function compartirWhatsApp(c: Cotizacion) {
     const total = getTotal(c);
     const mensaje = encodeURIComponent(
-      "Hola " + c.cliente_nombre + ", te comparto tu cotización:\n\n" +
-      "📄 " + c.numero + "\n" +
-      "💰 Total: " + formatearMoneda(total, monedaUi) + "\n" +
-      (c.fecha_validez ? "📅 Válida hasta: " + c.fecha_validez + "\n" : "") +
-      "\nQuedo atento a cualquier consulta. ¡Gracias!"
+      t("cotizaciones.whatsapp.saludo", { nombre: c.cliente_nombre }) +
+      t("cotizaciones.whatsapp.numero", { numero: c.numero }) +
+      t("cotizaciones.whatsapp.total", { total: formatearMoneda(total, monedaUi) }) +
+      (c.fecha_validez ? t("cotizaciones.whatsapp.validaHasta", { fecha: c.fecha_validez }) : "") +
+      t("cotizaciones.whatsapp.despedida")
     );
     openUrl("https://wa.me/" + (c.cliente_telefono || "") + "?text=" + mensaje);
   }
@@ -326,7 +332,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     const telefono = perfil?.telefono || "";
     const moneda = perfil?.moneda || "USD";
     const emailFreelancer = user?.email || "";
-    const textoTerminos = c.politicas_custom || construirPoliticas(c.politicas || POLITICAS_POR_DEFECTO);
+    const textoTerminos = c.politicas_custom || construirPoliticas(c.politicas || politicasPorDefecto(t), t);
 
     const footerHeight = 32;
     const footerY = 297 - footerHeight;
@@ -373,12 +379,12 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     doc.setTextColor(30, 30, 30);
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.text("COTIZACIÓN", 155, 14);
+    doc.text(t("cotizaciones.pdf.cotizacion"), 155, 14);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.text(c.numero, 155, 20);
-    doc.text("Emisión: " + c.fecha_emision, 155, 26);
-    doc.text("Validez: " + (c.fecha_validez || "—"), 155, 32);
+    doc.text(t("cotizaciones.pdf.emision", { fecha: c.fecha_emision }), 155, 26);
+    doc.text(t("cotizaciones.pdf.validez", { fecha: c.fecha_validez || "—" }), 155, 32);
 
     const estadoColors: Record<string, [number, number, number]> = {
       aprobada: [29, 184, 160],
@@ -392,7 +398,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text(estadoEfectivo(c).toUpperCase(), 157, 40.5);
+    doc.text(estadoConfig[estadoEfectivo(c)].label.toUpperCase(), 157, 40.5);
 
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.3);
@@ -402,8 +408,8 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     doc.setTextColor(...gris);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text("EMITIDO POR", 14, y);
-    doc.text("CLIENTE", 110, y);
+    doc.text(t("cotizaciones.pdf.emitidoPor"), 14, y);
+    doc.text(t("cotizaciones.pdf.cliente"), 110, y);
     y += 6;
 
     doc.setFont("helvetica", "bold");
@@ -439,10 +445,10 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     doc.setTextColor(...gris);
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "bold");
-    doc.text("CONCEPTO", 17, y + 3.5);
-    doc.text("CANTIDAD", 112, y + 3.5, { align: "right" });
-    doc.text("VALOR", 143, y + 3.5, { align: "right" });
-    doc.text("SUBTOTAL", 178, y + 3.5, { align: "right" });
+    doc.text(t("cotizaciones.pdf.concepto"), 17, y + 3.5);
+    doc.text(t("cotizaciones.pdf.cantidad"), 112, y + 3.5, { align: "right" });
+    doc.text(t("cotizaciones.pdf.valor"), 143, y + 3.5, { align: "right" });
+    doc.text(t("cotizaciones.pdf.subtotal"), 178, y + 3.5, { align: "right" });
     y += 10;
 
     doc.setFont("helvetica", "normal");
@@ -469,7 +475,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(30, 30, 30);
-    doc.text("TOTAL", 17, y);
+    doc.text(t("cotizaciones.pdf.total"), 17, y);
     doc.setTextColor(...teal);
     doc.text(formatearMoneda(total, moneda), 178, y, { align: "right" });
     y += 8;
@@ -483,7 +489,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("NOTAS", 17, y);
+      doc.text(t("cotizaciones.pdf.notas"), 17, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
@@ -502,7 +508,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("TÉRMINOS Y CONDICIONES", 17, y);
+      doc.text(t("cotizaciones.pdf.terminos"), 17, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
@@ -520,8 +526,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     const logoW = (logoH * 7575) / 1089;
     doc.addImage(logoFlowo, "PNG", 14, footerY + (footerHeight - logoH) / 2, logoW, logoH);
 
-    const nota =
-      "Documento generado con Flowo como cotización. No reemplaza asesoría legal profesional.";
+    const nota = t("cotizaciones.pdf.nota");
 
     doc.setTextColor(220, 220, 220);
     doc.setFont("helvetica", "normal");
@@ -531,7 +536,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
     doc.setFontSize(5);
     doc.setTextColor(180, 180, 180);
-    doc.text("Generado con Flowo · appflowo.com", 70, footerY + 22);
+    doc.text(t("cotizaciones.pdf.generadoPor"), 70, footerY + 22);
 
     const pdfBytes = doc.output("arraybuffer");
     const { writeFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
@@ -540,7 +545,10 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       new Uint8Array(pdfBytes),
       { baseDir: BaseDirectory.Download }
     );
-    sendNotification({ title: "PDF guardado", body: c.numero + ".pdf guardado en Descargas" });
+    sendNotification({
+      title: t("cotizaciones.pdfGuardadoTitulo"),
+      body: t("cotizaciones.pdfGuardadoBody", { archivo: c.numero + ".pdf" }),
+    });
   }
 
   async function generarComprobante(c: Cotizacion) {
@@ -573,7 +581,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
     });
 
     if (!error) {
-      sendNotification({ title: "Comprobante creado", body: numero + " generado desde " + c.numero });
+      sendNotification({ title: t("cotizaciones.comprobanteCreadoTitulo"), body: t("cotizaciones.comprobanteCreadoBody", { numero, origen: c.numero }) });
       if (onIrAFacturas) onIrAFacturas();
     }
   }
@@ -584,11 +592,11 @@ function Cotizaciones({ onIrAFacturas }: Props) {
   const totalVencidas = cotizaciones.filter((c) => estadoEfectivo(c) === "vencida").reduce((a, c) => a + getTotal(c), 0);
 
   const filtrosEstado = [
-    { id: "todas", label: "Todas", conteo: cotizaciones.length },
-    { id: "pendiente", label: "Pendientes", conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "pendiente").length },
-    { id: "aprobada", label: "Aprobadas", conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "aprobada").length },
-    { id: "rechazada", label: "Rechazadas", conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "rechazada").length },
-    { id: "vencida", label: "Vencidas", conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "vencida").length },
+    { id: "todas", label: t("cotizaciones.todas"), conteo: cotizaciones.length },
+    { id: "pendiente", label: t("cotizaciones.estados.pendientes"), conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "pendiente").length },
+    { id: "aprobada", label: t("cotizaciones.estados.aprobadas"), conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "aprobada").length },
+    { id: "rechazada", label: t("cotizaciones.estados.rechazadas"), conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "rechazada").length },
+    { id: "vencida", label: t("cotizaciones.estados.vencidas"), conteo: cotizaciones.filter((c) => estadoEfectivo(c) === "vencida").length },
   ];
 
   const cotizacionesFiltradas = cotizaciones.filter((c) => {
@@ -601,7 +609,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
   });
 
   if (cargando) {
-    return <div className="p-8"><p className="text-muted text-sm">Cargando cotizaciones...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">{t("cotizaciones.cargando")}</p></div>;
   }
 
   const botonSecundario = "text-sm text-primary border border-edge px-3 py-2 rounded-lg hover:bg-surface transition-colors flex-shrink-0";
@@ -611,35 +619,35 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-primary">Cotizaciones</h2>
-          <p className="text-muted mt-1">{cotizaciones.length} cotizaciones en total</p>
+          <h2 className="text-2xl font-bold text-primary">{t("cotizaciones.titulo")}</h2>
+          <p className="text-muted mt-1">{t("cotizaciones.total", { count: cotizaciones.length })}</p>
         </div>
         <button onClick={abrirForm}
           className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-          + Nueva cotización
+          + {t("cotizaciones.nuevaCotizacion")}
         </button>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Aprobadas</p>
+          <p className="text-muted text-xs mb-1">{t("cotizaciones.estados.aprobadas")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalAprobadas, monedaUi)}</p>
-          <p className="text-accent text-xs mt-1">{cotizaciones.filter((c) => estadoEfectivo(c) === "aprobada").length} aprobadas</p>
+          <p className="text-accent text-xs mt-1">{t("cotizaciones.aprobadasCaption", { count: cotizaciones.filter((c) => estadoEfectivo(c) === "aprobada").length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Pendientes</p>
+          <p className="text-muted text-xs mb-1">{t("cotizaciones.estados.pendientes")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalPendientes, monedaUi)}</p>
-          <p className="text-violet text-xs mt-1">{cotizaciones.filter((c) => estadoEfectivo(c) === "pendiente").length} por responder</p>
+          <p className="text-violet text-xs mt-1">{t("cotizaciones.porResponder", { count: cotizaciones.filter((c) => estadoEfectivo(c) === "pendiente").length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Rechazadas</p>
+          <p className="text-muted text-xs mb-1">{t("cotizaciones.estados.rechazadas")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalRechazadas, monedaUi)}</p>
-          <p className="text-coral text-xs mt-1">{cotizaciones.filter((c) => estadoEfectivo(c) === "rechazada").length} rechazadas</p>
+          <p className="text-coral text-xs mt-1">{t("cotizaciones.rechazadasCaption", { count: cotizaciones.filter((c) => estadoEfectivo(c) === "rechazada").length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Vencidas</p>
+          <p className="text-muted text-xs mb-1">{t("cotizaciones.estados.vencidas")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalVencidas, monedaUi)}</p>
-          <p className="text-muted text-xs mt-1">{cotizaciones.filter((c) => estadoEfectivo(c) === "vencida").length} vencidas</p>
+          <p className="text-muted text-xs mt-1">{t("cotizaciones.vencidasCaption", { count: cotizaciones.filter((c) => estadoEfectivo(c) === "vencida").length })}</p>
         </div>
       </div>
 
@@ -648,30 +656,30 @@ function Cotizaciones({ onIrAFacturas }: Props) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-primary text-lg font-semibold tracking-tight">
-                {editandoId ? "Editar cotización" : "Nueva cotización"}
+                {editandoId ? t("cotizaciones.editarCotizacion") : t("cotizaciones.nuevaCotizacionTitulo")}
               </h3>
-              <p className="text-muted text-xs mt-0.5">No necesita estar en tu lista de clientes</p>
+              <p className="text-muted text-xs mt-0.5">{t("cotizaciones.noNecesitaCliente")}</p>
             </div>
             <button onClick={() => { setMostrarForm(false); setEditandoId(null); }}
               className="text-muted text-xs px-3 py-1.5 rounded-lg hover:text-primary hover:bg-surface transition-colors">
-              Cerrar
+              {t("cotizaciones.cerrar")}
             </button>
           </div>
 
           <div className="mb-6">
-            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">Datos del cliente</p>
+            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">{t("cotizaciones.datosCliente")}</p>
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">
                 <label className="text-muted text-xs mb-1.5 block">
-                  Nombre <span className="text-accent">*</span>
+                  {t("cotizaciones.nombre")} <span className="text-accent">*</span>
                 </label>
                 <input value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)}
-                  placeholder="Nombre del cliente"
+                  placeholder={t("cotizaciones.nombreClientePlaceholder")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
               <div>
                 <label className="text-muted text-xs mb-1.5 block">
-                  Validez <span className="text-accent">*</span>
+                  {t("cotizaciones.validez")} <span className="text-accent">*</span>
                 </label>
                 <input value={fechaValidez} onChange={(e) => setFechaValidez(e.target.value)}
                   type="date"
@@ -680,15 +688,15 @@ function Cotizaciones({ onIrAFacturas }: Props) {
             </div>
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div>
-                <label className="text-muted text-xs mb-1.5 block">Teléfono (WhatsApp)</label>
+                <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.telefonoWhatsApp")}</label>
                 <input value={clienteTelefono} onChange={(e) => setClienteTelefono(e.target.value)}
-                  placeholder="+57 300 123 4567"
+                  placeholder={t("cotizaciones.telefonoPlaceholder")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
               <div>
-                <label className="text-muted text-xs mb-1.5 block">Correo</label>
+                <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.correo")}</label>
                 <input value={clienteCorreo} onChange={(e) => setClienteCorreo(e.target.value)}
-                  placeholder="cliente@correo.com"
+                  placeholder={t("cotizaciones.correoPlaceholder")}
                   className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
               </div>
             </div>
@@ -697,40 +705,40 @@ function Cotizaciones({ onIrAFacturas }: Props) {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-muted text-xs uppercase tracking-wide font-medium">
-                Ítems <span className="text-accent">*</span>
+                {t("cotizaciones.items")} <span className="text-accent">*</span>
               </p>
               <div className="flex items-center gap-2">
                 {servicios.length > 0 && (
                   <Select value={catalogoSel} onChange={(v) => { if (v) agregarDelCatalogo(v); }}
                     triggerClassName="bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent flex items-center gap-2"
                     options={[
-                      { value: "", label: "+ Del catálogo" },
+                      { value: "", label: t("cotizaciones.delCatalogo") },
                       ...servicios.map((s) => ({ value: String(s.id), label: s.nombre + " — " + formatearMoneda(s.precio, monedaUi) })),
                     ]} />
                 )}
                 <button onClick={agregarItem}
                   className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors">
-                  + Agregar ítem
+                  {t("cotizaciones.agregarItem")}
                 </button>
               </div>
             </div>
             {servicios.length === 0 && (
-              <p className="text-muted text-xs mb-2">No tienes servicios en tu catálogo — escríbelos manualmente.</p>
+              <p className="text-muted text-xs mb-2">{t("cotizaciones.sinServicios")}</p>
             )}
             <div className="space-y-2 mb-3">
               {items.map((item, index) => (
                 <div key={index} className="flex gap-2 items-center">
                   <input value={item.descripcion}
                     onChange={(e) => actualizarItem(index, "descripcion", e.target.value)}
-                    placeholder="Descripción del servicio"
+                    placeholder={t("cotizaciones.descripcionServicioPlaceholder")}
                     className="flex-1 bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                   <input value={item.cantidad || ""}
                     onChange={(e) => actualizarItem(index, "cantidad", Number(e.target.value))}
-                    placeholder="Cant." type="number" min={1}
+                    placeholder={t("cotizaciones.cantidadPlaceholder")} type="number" min={1}
                     className="w-20 bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                   <input value={item.valor || ""}
                     onChange={(e) => actualizarItem(index, "valor", Number(e.target.value))}
-                    placeholder="Valor unit." type="number"
+                    placeholder={t("cotizaciones.valorUnitarioPlaceholder")} type="number"
                     className="w-32 bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                   <p className="text-primary text-xs font-medium w-28 text-right">
                     {formatearMoneda((item.cantidad || 0) * (item.valor || 0), monedaUi)}
@@ -738,7 +746,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
                   {items.length > 1 && (
                     <button onClick={() => quitarItem(index)}
                       className="text-muted text-xs px-2 py-2 hover:text-coral transition-colors">
-                      Quitar
+                      {t("cotizaciones.quitar")}
                     </button>
                   )}
                 </div>
@@ -746,7 +754,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
             </div>
             <div className="bg-surface border border-edge rounded-lg px-4 py-3">
               <div className="flex items-center justify-between">
-                <span className="text-muted text-sm">Total de la cotización</span>
+                <span className="text-muted text-sm">{t("cotizaciones.totalCotizacion")}</span>
                 <span className="text-primary text-lg font-semibold">
                   {formatearMoneda(items.reduce((acc, i) => acc + (i.cantidad || 0) * (i.valor || 0), 0), monedaUi)}
                 </span>
@@ -756,68 +764,68 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
           <div className="mb-6">
             <label className="text-muted text-xs uppercase tracking-wide font-medium mb-3 block">
-              Notas <span className="text-muted/60 normal-case">— opcional</span>
+              {t("cotizaciones.notas")} <span className="text-muted/60 normal-case">{t("cotizaciones.opcional")}</span>
             </label>
             <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={3}
-              placeholder="Ej: válida por 15 días, se requiere 50% de anticipo para comenzar..."
+              placeholder={t("cotizaciones.notasPlaceholder")}
               className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors resize-y" />
           </div>
 
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-muted text-xs uppercase tracking-wide font-medium">Términos y políticas</p>
+              <p className="text-muted text-xs uppercase tracking-wide font-medium">{t("cotizaciones.terminosPoliticas")}</p>
               {politicasCustom ? (
                 <button onClick={() => { setTextoCustomTemp(politicasCustom); setModalPoliticas(true); }}
                   className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors">
-                  Editar políticas personalizadas
+                  {t("cotizaciones.editarPoliticasPersonalizadas")}
                 </button>
               ) : (
-                <button onClick={() => { setTextoCustomTemp(construirPoliticas(politicas)); setModalPoliticas(true); }}
+                <button onClick={() => { setTextoCustomTemp(construirPoliticas(politicas, t)); setModalPoliticas(true); }}
                   className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors">
-                  Políticas personalizadas
+                  {t("cotizaciones.politicasPersonalizadas")}
                 </button>
               )}
             </div>
 
             {politicasCustom ? (
               <div className="bg-surface border border-accent/30 rounded-lg p-4">
-                <p className="text-accent text-xs font-medium mb-2">✓ Políticas personalizadas</p>
+                <p className="text-accent text-xs font-medium mb-2">{t("cotizaciones.politicasPersonalizadasCheck")}</p>
                 <p className="text-primary text-sm whitespace-pre-wrap">{politicasCustom}</p>
                 <button onClick={() => setPoliticasCustom(null)}
                   className="text-muted text-xs mt-3 hover:text-primary transition-colors">
-                  Volver a las políticas de Flowo
+                  {t("cotizaciones.volverPoliticasFlowo")}
                 </button>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-muted text-xs mb-1.5 block">Forma de pago</label>
+                    <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.politicas.formaPago")}</label>
                     <input value={politicas.formaPago}
                       onChange={(e) => setPoliticas({ ...politicas, formaPago: e.target.value })}
-                      placeholder="Ej: 50% anticipo, saldo a la entrega"
+                      placeholder={t("cotizaciones.formaPagoPlaceholder")}
                       className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                   </div>
                   <div>
-                    <label className="text-muted text-xs mb-1.5 block">Fecha de entrega / plazo</label>
+                    <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.politicas.fechaEntregaPlazo")}</label>
                     <input value={politicas.fechasEntrega}
                       onChange={(e) => setPoliticas({ ...politicas, fechasEntrega: e.target.value })}
-                      placeholder="Ej: entrega en 15 días hábiles"
+                      placeholder={t("cotizaciones.fechaEntregaPlaceholder")}
                       className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-muted text-xs mb-1.5 block">Validez</label>
+                  <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.politicas.validez")}</label>
                   <input value={politicas.validez}
                     onChange={(e) => setPoliticas({ ...politicas, validez: e.target.value })}
-                    placeholder="Ej: válida por 15 días"
+                    placeholder={t("cotizaciones.validezPlaceholder")}
                     className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
                 </div>
                 <div>
-                  <label className="text-muted text-xs mb-1.5 block">Otras condiciones <span className="text-muted/60 normal-case">— opcional</span></label>
+                  <label className="text-muted text-xs mb-1.5 block">{t("cotizaciones.politicas.otras")} <span className="text-muted/60 normal-case">{t("cotizaciones.opcional")}</span></label>
                   <textarea value={politicas.otras}
                     onChange={(e) => setPoliticas({ ...politicas, otras: e.target.value })} rows={2}
-                    placeholder="Cualquier otra condición que quieras incluir..."
+                    placeholder={t("cotizaciones.otrasCondicionesPlaceholder")}
                     className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors resize-y" />
                 </div>
               </div>
@@ -829,11 +837,11 @@ function Cotizaciones({ onIrAFacturas }: Props) {
           <div className="flex gap-3 pt-5 border-t border-edge">
             <button onClick={guardarCotizacion} disabled={guardando}
               className="bg-accent text-onaccent font-medium px-5 py-2.5 rounded-lg text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">
-              {guardando ? "Guardando..." : "Guardar cotización"}
+              {guardando ? t("cotizaciones.guardando") : t("cotizaciones.guardarCotizacion")}
             </button>
             <button onClick={() => { setMostrarForm(false); setEditandoId(null); }}
               className="text-muted px-4 py-2.5 rounded-lg text-sm hover:text-primary transition-colors">
-              Cancelar
+              {t("cotizaciones.cancelar")}
             </button>
           </div>
         </div>
@@ -847,7 +855,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
             </svg>
           </span>
           <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por cliente, correo o número..."
+            placeholder={t("cotizaciones.buscarPlaceholder")}
             className="w-full bg-canvas border border-edge rounded-lg pl-9 pr-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors" />
         </div>
         <div className="flex gap-1 bg-canvas border border-edge rounded-lg p-0.5 overflow-x-auto">
@@ -866,8 +874,8 @@ function Cotizaciones({ onIrAFacturas }: Props) {
           <div className="bg-surface border border-dashed border-edge rounded-xl p-10 text-center">
             <p className="text-muted text-sm">
               {cotizaciones.length === 0
-                ? "Aún no tienes cotizaciones. Crea la primera con el botón de arriba."
-                : "No hay cotizaciones que coincidan con esta búsqueda."}
+                ? t("cotizaciones.sinCotizaciones")
+                : t("cotizaciones.sinResultados")}
             </p>
           </div>
         )}
@@ -893,7 +901,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
                         {estadoConfig[estado].label}
                       </span>
                       {estado === "vencida" && c.fecha_validez && (
-                        <span className="text-coral text-xs">· Vencida hace {getDiasVencida(c.fecha_validez)} días</span>
+                        <span className="text-coral text-xs">{t("cotizaciones.vencidaHace", { count: getDiasVencida(c.fecha_validez) })}</span>
                       )}
                     </div>
                     <p className="text-muted text-xs truncate">
@@ -904,7 +912,7 @@ function Cotizaciones({ onIrAFacturas }: Props) {
                 <div className="flex items-center gap-4 flex-shrink-0">
                   <div className="text-right">
                     <p className="text-primary text-base font-semibold">{formatearMoneda(total, monedaUi)}</p>
-                    {c.fecha_validez && <p className="text-muted text-xs">Vence: {c.fecha_validez}</p>}
+                    {c.fecha_validez && <p className="text-muted text-xs">{t("cotizaciones.vence", { fecha: c.fecha_validez })}</p>}
                   </div>
                   <svg className={"w-4 h-4 text-muted transition-transform duration-200 " + (c.abierta ? "rotate-180" : "")}
                     fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -918,23 +926,23 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">Cliente</p>
+                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">{t("cotizaciones.cliente")}</p>
                       <p className="text-primary text-sm">{c.cliente_nombre}</p>
                       {c.cliente_telefono && <p className="text-muted text-xs">{c.cliente_telefono}</p>}
                       {c.cliente_correo && <p className="text-muted text-xs">{c.cliente_correo}</p>}
                     </div>
                     <div>
-                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">Emisión</p>
+                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">{t("cotizaciones.emision")}</p>
                       <p className="text-primary text-sm font-mono">{c.fecha_emision}</p>
                     </div>
                     <div>
-                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">Validez</p>
-                      <p className="text-primary text-sm font-mono">{c.fecha_validez || "Sin fecha"}</p>
+                      <p className="text-muted text-[10px] uppercase tracking-wide mb-1">{t("cotizaciones.validez")}</p>
+                      <p className="text-primary text-sm font-mono">{c.fecha_validez || t("cotizaciones.sinFecha")}</p>
                     </div>
                   </div>
 
                   <div>
-                    <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">Ítems</p>
+                    <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">{t("cotizaciones.items")}</p>
                     <div className="space-y-1.5">
                       {c.items.map((item, index) => (
                         <div key={index} className="flex items-center justify-between bg-surface border border-edge rounded-lg px-3 py-2">
@@ -950,47 +958,47 @@ function Cotizaciones({ onIrAFacturas }: Props) {
 
                   {c.notas && (
                     <div>
-                      <p className="text-muted text-xs uppercase tracking-wide font-medium mb-1">Notas</p>
+                      <p className="text-muted text-xs uppercase tracking-wide font-medium mb-1">{t("cotizaciones.notas")}</p>
                       <p className="text-muted text-sm whitespace-pre-wrap">{c.notas}</p>
                     </div>
                   )}
 
                   <div className="flex flex-wrap gap-2 pt-4 border-t border-edge">
                     <button onClick={() => generarPDF(c)} className={botonSecundario}>
-                      Descargar PDF
+                      {t("cotizaciones.descargarPDF")}
                     </button>
                     {c.cliente_telefono && (
                       <button onClick={() => setModalWhatsAppId(c.id)} className={botonSecundario}>
-                        WhatsApp
+                        {t("cotizaciones.whatsApp")}
                       </button>
                     )}
                     {estado === "pendiente" && (
                       <>
                         <button onClick={() => cambiarEstado(c.id, "aprobada")}
                           className="bg-accent text-onaccent font-medium text-sm px-3 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                          Aprobar
+                          {t("cotizaciones.aprobar")}
                         </button>
                         <button onClick={() => cambiarEstado(c.id, "rechazada")}
                           className="text-coral text-sm border border-coral/30 px-3 py-2 rounded-lg hover:bg-coral/10 transition-colors flex-shrink-0">
-                          Rechazar
+                          {t("cotizaciones.rechazar")}
                         </button>
                       </>
                     )}
                     {estado === "aprobada" && (
                       <button onClick={() => generarComprobante(c)}
                         className="bg-accent text-onaccent font-medium text-sm px-3 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                        Generar comprobante
+                        {t("cotizaciones.generarComprobante")}
                       </button>
                     )}
                     <button onClick={() => abrirEdicion(c)} className={botonSecundario}>
-                      Editar
+                      {t("cotizaciones.editar")}
                     </button>
                     <button onClick={() => duplicarCotizacion(c)} className={botonSecundario}>
-                      Duplicar
+                      {t("cotizaciones.duplicar")}
                     </button>
                     <button onClick={() => setModalEliminarId(c.id)}
                       className="text-coral text-sm border border-coral/30 px-3 py-2 rounded-lg hover:bg-coral/10 transition-colors flex-shrink-0">
-                      Eliminar
+                      {t("cotizaciones.eliminar")}
                     </button>
                   </div>
                 </div>
@@ -1003,22 +1011,22 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       {modalPoliticas && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-primary font-medium mb-1">Políticas personalizadas</h3>
-            <p className="text-muted text-sm mb-4">Escribe tus propias condiciones. Reemplazarán las políticas de Flowo en esta cotización.</p>
+            <h3 className="text-primary font-medium mb-1">{t("cotizaciones.modalPoliticas.titulo")}</h3>
+            <p className="text-muted text-sm mb-4">{t("cotizaciones.modalPoliticas.desc")}</p>
             <textarea value={textoCustomTemp} onChange={(e) => setTextoCustomTemp(e.target.value)} rows={8}
-              placeholder="Forma de pago: ...&#10;Entrega: ...&#10;Otras condiciones..."
+              placeholder={t("cotizaciones.modalPoliticas.placeholder")}
               className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent transition-colors resize-y mb-4" />
             <div className="flex gap-3">
               <button onClick={() => setModalPoliticas(false)}
                 className="flex-1 text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-                Cancelar
+                {t("cotizaciones.cancelar")}
               </button>
               <button onClick={() => {
                 setPoliticasCustom(textoCustomTemp.trim());
                 setModalPoliticas(false);
               }}
                 className="flex-1 bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                Usar estas políticas
+                {t("cotizaciones.modalPoliticas.usar")}
               </button>
             </div>
           </div>
@@ -1035,25 +1043,24 @@ function Cotizaciones({ onIrAFacturas }: Props) {
                 </svg>
               </div>
               <div>
-                <h3 className="text-primary font-medium mb-1">Enviar por WhatsApp</h3>
+                <h3 className="text-primary font-medium mb-1">{t("cotizaciones.modalWhatsApp.titulo")}</h3>
                 <p className="text-muted text-sm">
-                  Recuerda descargar el PDF y adjuntarlo en la conversación antes de enviar la cotización.
-                  WhatsApp no permite adjuntar archivos automáticamente.
+                  {t("cotizaciones.modalWhatsApp.desc")}
                 </p>
               </div>
             </div>
             <div className="flex flex-col gap-2.5 mt-5">
               <button onClick={() => { if (modalWhatsAppId) { const c = cotizaciones.find((x) => x.id === modalWhatsAppId); if (c) generarPDF(c); } }}
                 className="w-full bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity">
-                Descargar PDF
+                {t("cotizaciones.descargarPDF")}
               </button>
               <button onClick={() => { if (modalWhatsAppId) { const c = cotizaciones.find((x) => x.id === modalWhatsAppId); if (c) compartirWhatsApp(c); } setModalWhatsAppId(null); }}
                 className="w-full text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-                Abrir WhatsApp
+                {t("cotizaciones.modalWhatsApp.abrir")}
               </button>
               <button onClick={() => setModalWhatsAppId(null)}
                 className="w-full text-muted text-sm px-4 py-1.5 rounded-lg hover:text-primary transition-colors">
-                Cancelar
+                {t("cotizaciones.cancelar")}
               </button>
             </div>
           </div>
@@ -1063,8 +1070,8 @@ function Cotizaciones({ onIrAFacturas }: Props) {
       {modalEliminarId && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-sm">
-            <h3 className="text-primary font-medium mb-1">¿Eliminar cotización?</h3>
-            <p className="text-muted text-sm mb-6">Esta acción no se puede deshacer.</p>
+            <h3 className="text-primary font-medium mb-1">{t("cotizaciones.modalEliminar.titulo")}</h3>
+            <p className="text-muted text-sm mb-6">{t("cotizaciones.modalEliminar.desc")}</p>
             <div className="flex gap-3">
               <button onClick={() => setModalEliminarId(null)}
                 className="flex-1 text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">

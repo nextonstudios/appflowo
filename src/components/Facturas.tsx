@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import jsPDF from "jspdf";
@@ -43,12 +45,14 @@ interface ProyectoOpcion {
   cliente_id: string;
 }
 
-const estadoConfig = {
-  "pendiente": { label: "Pendiente", color: "text-violet bg-violet/10" },
-  "abonada": { label: "Abonada", color: "text-accent bg-accent/10" },
-  "pagada": { label: "Pagada", color: "text-muted bg-gray/10" },
-  "vencida": { label: "Vencida", color: "text-coral bg-coral/10" },
-};
+function getEstadoConfig(t: TFunction) {
+  return {
+    "pendiente": { label: t("facturas.estado.pendiente"), color: "text-violet bg-violet/10" },
+    "abonada": { label: t("facturas.estado.abonada"), color: "text-accent bg-accent/10" },
+    "pagada": { label: t("facturas.estado.pagada"), color: "text-muted bg-gray/10" },
+    "vencida": { label: t("facturas.estado.vencida"), color: "text-coral bg-coral/10" },
+  };
+}
 
 function getDiasVencida(fechaVencimiento: string) {
   const hoy = new Date();
@@ -64,7 +68,9 @@ interface FacturasProps {
 }
 
 function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps) {
+  const { t } = useTranslation();
   const monedaUi = useMoneda();
+  const estadoConfig = getEstadoConfig(t);
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [proyectos, setProyectos] = useState<ProyectoOpcion[]>([]);
   const [clientesMap, setClientesMap] = useState<Record<string, string>>({});
@@ -195,9 +201,9 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     const abonoNum = abonoInicial ? Number(abonoInicial) : 0;
     const estadoInicial = abonoNum >= totalConceptos && abonoNum > 0 ? "pagada" : abonoNum > 0 ? "abonada" : "pendiente";
 
-    const historialInicial = [{ estado: "Creada", fecha: hoy }];
+    const historialInicial = [{ estado: t("facturas.historialEvento.creada"), fecha: hoy }];
     if (abonoNum > 0) {
-      historialInicial.push({ estado: "Abono inicial de " + formatearMoneda(abonoNum, monedaUi) + " registrado", fecha: hoy });
+      historialInicial.push({ estado: t("facturas.historialEvento.abonoInicial", { monto: formatearMoneda(abonoNum, monedaUi) }), fecha: hoy });
     }
 
     const { data } = await supabase.from("facturas").insert({
@@ -249,7 +255,7 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     if (!factura) return;
     const total = getTotalFactura(factura);
     const nuevoHistorial = [...factura.historial, {
-      estado: nuevoEstado === "pagada" ? "Pagada completa" : nuevoEstado === "vencida" ? "Marcada vencida" : "Pendiente",
+      estado: nuevoEstado === "pagada" ? t("facturas.historialEvento.pagadaCompleta") : nuevoEstado === "vencida" ? t("facturas.historialEvento.marcadaVencida") : t("facturas.historialEvento.pendiente"),
       fecha: new Date().toISOString().split("T")[0],
     }];
     const nuevoAbonado = nuevoEstado === "pagada" ? total : factura.abonado;
@@ -278,7 +284,7 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     const totalAbonado = factura.abonado + nuevoAbono;
     const nuevoEstado = totalAbonado >= total ? "pagada" : "abonada";
     const nuevoHistorial = [...factura.historial, {
-      estado: nuevoEstado === "pagada" ? "Pagada completa" : "Abono de " + formatearMoneda(nuevoAbono, monedaUi) + " registrado",
+      estado: nuevoEstado === "pagada" ? t("facturas.historialEvento.pagadaCompleta") : t("facturas.historialEvento.abono", { monto: formatearMoneda(nuevoAbono, monedaUi) }),
       fecha: new Date().toISOString().split("T")[0],
     }];
 
@@ -301,7 +307,7 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     const factura = facturas.find((f) => f.id === id);
     if (!factura) return;
     const nuevosConceptos = [...factura.conceptos, { descripcion: nuevoConceptoDesc, monto: Number(nuevoConceptoMonto) }];
-    const nuevoHistorial = [...factura.historial, { estado: "Concepto agregado: " + nuevoConceptoDesc, fecha: new Date().toISOString().split("T")[0] }];
+    const nuevoHistorial = [...factura.historial, { estado: t("facturas.historialEvento.conceptoAgregado", { concepto: nuevoConceptoDesc }), fecha: new Date().toISOString().split("T")[0] }];
     await supabase.from("facturas").update({ conceptos: nuevosConceptos, historial: nuevoHistorial }).eq("id", id);
     setFacturas(facturas.map((f) => f.id === id ? { ...f, conceptos: nuevosConceptos, historial: nuevoHistorial } : f));
     setNuevoConceptoDesc("");
@@ -312,7 +318,7 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     const factura = facturas.find((f) => f.id === facturaId);
     if (!factura) return;
     const nuevosConceptos = factura.conceptos.filter((_, i) => i !== index);
-    const nuevoHistorial = [...factura.historial, { estado: "Concepto eliminado", fecha: new Date().toISOString().split("T")[0] }];
+    const nuevoHistorial = [...factura.historial, { estado: t("facturas.historialEvento.conceptoEliminado"), fecha: new Date().toISOString().split("T")[0] }];
     await supabase.from("facturas").update({ conceptos: nuevosConceptos, historial: nuevoHistorial }).eq("id", facturaId);
     setFacturas(facturas.map((f) => f.id === facturaId ? { ...f, conceptos: nuevosConceptos, historial: nuevoHistorial } : f));
   }
@@ -333,14 +339,14 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     const total = getTotalFactura(factura);
     const restante = total - factura.abonado;
     const mensaje = encodeURIComponent(
-      "Hola " + factura.cliente_nombre + ", te comparto el resumen de tu comprobante:\n\n" +
+      t("facturas.wa.saludo", { cliente: factura.cliente_nombre }) + "\n\n" +
       "📄 " + factura.numero + "\n" +
-      "📁 Proyecto: " + factura.proyecto_nombre + "\n" +
-      "💰 Total: " + formatearMoneda(total, monedaUi) + "\n" +
-      (factura.abonado > 0 ? "✅ Abonado: " + formatearMoneda(factura.abonado, monedaUi) + "\n" +
-      "⏳ Pendiente: " + formatearMoneda(restante, monedaUi) + "\n" : "") +
-      "📅 Vencimiento: " + factura.fecha_vencimiento + "\n\n" +
-      "Quedo atento a cualquier consulta. ¡Gracias!"
+      t("facturas.wa.proyecto", { nombre: factura.proyecto_nombre }) + "\n" +
+      t("facturas.wa.total", { monto: formatearMoneda(total, monedaUi) }) + "\n" +
+      (factura.abonado > 0 ? t("facturas.wa.abonado", { monto: formatearMoneda(factura.abonado, monedaUi) }) + "\n" +
+      t("facturas.wa.pendiente", { monto: formatearMoneda(restante, monedaUi) }) + "\n" : "") +
+      t("facturas.wa.vencimiento", { fecha: factura.fecha_vencimiento }) + "\n\n" +
+      t("facturas.wa.despedida")
     );
     openUrl("https://wa.me/" + (telefono || "") + "?text=" + mensaje);
   }
@@ -411,12 +417,12 @@ doc.rect(0, 0, 210, 50, "F");
     doc.setTextColor(30, 30, 30);
 doc.setFontSize(9);
 doc.setFont("helvetica", "bold");
-doc.text("COMPROBANTE", 155, 14);
+doc.text(t("facturas.pdf.comprobante"), 155, 14);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.text(factura.numero, 155, 20);
-    doc.text("Emisión: " + factura.fecha_emision, 155, 26);
-    doc.text("Vencimiento: " + factura.fecha_vencimiento, 155, 32);
+    doc.text(t("facturas.pdf.emision", { fecha: factura.fecha_emision }), 155, 26);
+    doc.text(t("facturas.pdf.vencimiento", { fecha: factura.fecha_vencimiento }), 155, 32);
 
     const estadoColors: Record<string, [number, number, number]> = {
       pagada: [29, 184, 160],
@@ -430,7 +436,7 @@ doc.text("COMPROBANTE", 155, 14);
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text(factura.estado.toUpperCase(), 157, 40.5);
+    doc.text(estadoConfig[factura.estado].label.toUpperCase(), 157, 40.5);
 
     doc.setDrawColor(220, 220, 220);
 doc.setLineWidth(0.3);
@@ -440,8 +446,8 @@ let y = 62;
     doc.setTextColor(...gris);
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.text("EMITIDO POR", 14, y);
-    doc.text("CLIENTE", 110, y);
+    doc.text(t("facturas.pdf.emitidoPor"), 14, y);
+    doc.text(t("facturas.pdf.cliente"), 110, y);
     y += 6;
 
     doc.setFont("helvetica", "bold");
@@ -455,7 +461,7 @@ let y = 62;
     doc.setFontSize(8);
     doc.setTextColor(...gris);
     if (marcaNombre) doc.text(marcaNombre, 14, y);
-    doc.text("Proyecto: " + factura.proyecto_nombre, 110, y);
+    doc.text(t("facturas.pdf.proyecto", { nombre: factura.proyecto_nombre }), 110, y);
     y += 4;
     if (marcaDesc) doc.text(marcaDesc, 14, y);
     y += 4;
@@ -476,8 +482,8 @@ let y = 62;
     doc.setTextColor(...gris);
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "bold");
-    doc.text("CONCEPTO", 17, y + 3.5);
-    doc.text("MONTO", 178, y + 3.5, { align: "right" });
+    doc.text(t("facturas.pdf.concepto"), 17, y + 3.5);
+    doc.text(t("facturas.pdf.monto"), 178, y + 3.5, { align: "right" });
     y += 10;
 
     doc.setFont("helvetica", "normal");
@@ -505,7 +511,7 @@ let y = 62;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("TAREAS REALIZADAS", 17, y + 2);
+      doc.text(t("facturas.pdf.tareasRealizadas"), 17, y + 2);
       y += 10;
 
       doc.setFont("helvetica", "normal");
@@ -527,7 +533,7 @@ let y = 62;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(30, 30, 30);
-    doc.text("TOTAL", 17, y);
+    doc.text(t("facturas.pdf.total"), 17, y);
     doc.setTextColor(...teal);
     doc.text(formatearMoneda(total, moneda), 178, y, { align: "right" });
     y += 8;
@@ -536,12 +542,12 @@ let y = 62;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(...gris);
-      doc.text("Abonado", 17, y);
+      doc.text(t("facturas.pdf.abonado"), 17, y);
       doc.text(formatearMoneda(factura.abonado, moneda), 178, y, { align: "right" });
       y += 7;
       doc.setTextColor(244, 124, 92);
       doc.setFont("helvetica", "bold");
-      doc.text("Saldo pendiente", 17, y);
+      doc.text(t("facturas.pdf.saldoPendiente"), 17, y);
       doc.text(formatearMoneda(restante, moneda), 178, y, { align: "right" });
       y += 7;
     }
@@ -553,7 +559,7 @@ let y = 62;
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text("✓ COMPROBANTE PAGADO COMPLETAMENTE", 105, y + 6.5, { align: "center" });
+      doc.text("✓ " + t("facturas.pdf.pagadoCompleto"), 105, y + 6.5, { align: "center" });
       y += 16;
     }
 
@@ -565,7 +571,7 @@ let y = 62;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(...gris);
-      doc.text("NOTAS", 17, y);
+      doc.text(t("facturas.pdf.notas"), 17, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
@@ -585,8 +591,7 @@ let y = 62;
     const logoW = (logoH * 7575) / 1089;
     doc.addImage(logoFlowo, "PNG", 14, footerY + (footerHeight - logoH) / 2, logoW, logoH);
 
-    const nota =
-      "Documento generado con Flowo como comprobante de pago. No reemplaza asesoría legal profesional.";
+    const nota = t("facturas.pdf.notaFooter");
 
     doc.setTextColor(220, 220, 220);
     doc.setFont("helvetica", "normal");
@@ -596,7 +601,7 @@ let y = 62;
 
     doc.setFontSize(5);
     doc.setTextColor(180, 180, 180);
-    doc.text("Generado con Flowo · appflowo.com", 70, footerY + 22);
+    doc.text(t("facturas.pdf.generadoCon"), 70, footerY + 22);
 
     const pdfBytes = doc.output("arraybuffer");
     const { writeFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
@@ -605,7 +610,7 @@ let y = 62;
       new Uint8Array(pdfBytes),
       { baseDir: BaseDirectory.Download }
     );
-    sendNotification({ title: "PDF guardado", body: factura.numero + ".pdf guardado en Descargas" });
+    sendNotification({ title: t("facturas.notif.pdfGuardado"), body: t("facturas.notif.pdfGuardadoBody", { nombre: factura.numero }) });
   }
 
   async function enviarPorEmail(factura: Factura) {
@@ -613,7 +618,7 @@ let y = 62;
     const emailCliente = proyecto ? clientesEmailMap[proyecto.cliente_id] : "";
 
     if (!emailCliente) {
-      sendNotification({ title: "Sin email", body: "Este cliente no tiene email registrado." });
+      sendNotification({ title: t("facturas.notif.sinEmail"), body: t("facturas.notif.sinEmailBody") });
       return;
     }
 
@@ -633,12 +638,12 @@ let y = 62;
 
       const data = await res.json();
       if (data.ok) {
-        sendNotification({ title: "Comprobante enviado", body: "Enviado correctamente a " + emailCliente });
+        sendNotification({ title: t("facturas.notif.enviado"), body: t("facturas.notif.enviadoBody", { email: emailCliente }) });
       } else {
-        sendNotification({ title: "Error al enviar", body: "No se pudo enviar el comprobante. Intenta de nuevo." });
+        sendNotification({ title: t("facturas.notif.errorEnviar"), body: t("facturas.notif.errorEnviarBody") });
       }
     } catch (error) {
-      sendNotification({ title: "Error de conexión", body: "No se pudo conectar. Intenta de nuevo." });
+      sendNotification({ title: t("facturas.notif.errorConexion"), body: t("facturas.notif.errorConexionBody") });
     }
   }
 
@@ -660,11 +665,11 @@ let y = 62;
   const totalVencido = facturasActivas.filter((f) => f.estado === "vencida").reduce((acc, f) => acc + getTotalFactura(f), 0);
 
   const filtrosEstado = [
-    { id: "activas", label: "Activas", conteo: facturasActivas.length },
-    { id: "pendiente", label: "Pendientes", conteo: facturas.filter((f) => f.estado === "pendiente").length },
-    { id: "abonada", label: "Abonadas", conteo: facturas.filter((f) => f.estado === "abonada").length },
-    { id: "vencida", label: "Vencidas", conteo: facturas.filter((f) => f.estado === "vencida").length },
-    { id: "pagadas", label: "Pagadas", conteo: facturasPagadas.length },
+    { id: "activas", label: t("facturas.filtro.activas"), conteo: facturasActivas.length },
+    { id: "pendiente", label: t("facturas.filtro.pendiente"), conteo: facturas.filter((f) => f.estado === "pendiente").length },
+    { id: "abonada", label: t("facturas.filtro.abonada"), conteo: facturas.filter((f) => f.estado === "abonada").length },
+    { id: "vencida", label: t("facturas.filtro.vencida"), conteo: facturas.filter((f) => f.estado === "vencida").length },
+    { id: "pagadas", label: t("facturas.filtro.pagadas"), conteo: facturasPagadas.length },
   ];
 
   const bordeEstado: Record<Factura["estado"], string> = {
@@ -675,7 +680,7 @@ let y = 62;
   };
 
   if (cargando) {
-    return <div className="p-8"><p className="text-muted text-sm">Cargando comprobantes...</p></div>;
+    return <div className="p-8"><p className="text-muted text-sm">{t("facturas.cargando")}</p></div>;
   }
 
   return (
@@ -683,35 +688,35 @@ let y = 62;
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-primary">Comprobantes</h2>
-          <p className="text-muted mt-1">{facturas.length} comprobantes en total</p>
+          <h2 className="text-2xl font-bold text-primary">{t("facturas.titulo")}</h2>
+          <p className="text-muted mt-1">{t("facturas.totalComprobantes", { count: facturas.length })}</p>
         </div>
         <button onClick={() => setMostrarForm(!mostrarForm)}
           className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-          + Nuevo comprobante
+          + {t("facturas.nuevoComprobante")}
         </button>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Cobrado</p>
+          <p className="text-muted text-xs mb-1">{t("facturas.tarjeta.cobrado")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalCobrado, monedaUi)}</p>
-          <p className="text-muted text-xs mt-1">{facturasPagadas.length} pagados</p>
+          <p className="text-muted text-xs mt-1">{t("facturas.tarjeta.pagados", { count: facturasPagadas.length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Pendiente</p>
+          <p className="text-muted text-xs mb-1">{t("facturas.tarjeta.pendiente")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalPendiente, monedaUi)}</p>
-          <p className="text-violet text-xs mt-1">{facturasActivas.filter((f) => f.estado === "pendiente").length} comprobantes</p>
+          <p className="text-violet text-xs mt-1">{t("facturas.conteoComprobantes", { count: facturasActivas.filter((f) => f.estado === "pendiente").length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Abonado</p>
+          <p className="text-muted text-xs mb-1">{t("facturas.tarjeta.abonado")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalAbonado, monedaUi)}</p>
-          <p className="text-accent text-xs mt-1">{facturasActivas.filter((f) => f.estado === "abonada").length} comprobantes</p>
+          <p className="text-accent text-xs mt-1">{t("facturas.conteoComprobantes", { count: facturasActivas.filter((f) => f.estado === "abonada").length })}</p>
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-4">
-          <p className="text-muted text-xs mb-1">Vencido</p>
+          <p className="text-muted text-xs mb-1">{t("facturas.tarjeta.vencido")}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(totalVencido, monedaUi)}</p>
-          <p className="text-coral text-xs mt-1">{facturasActivas.filter((f) => f.estado === "vencida").length} comprobantes</p>
+          <p className="text-coral text-xs mt-1">{t("facturas.conteoComprobantes", { count: facturasActivas.filter((f) => f.estado === "vencida").length })}</p>
         </div>
       </div>
 
@@ -719,31 +724,31 @@ let y = 62;
         <div className="bg-canvas border border-edge rounded-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-primary text-lg font-semibold tracking-tight">Nuevo comprobante</h3>
-              <p className="text-muted text-xs mt-0.5">Se llena solo con los servicios y horas de tu proyecto</p>
+              <h3 className="text-primary text-lg font-semibold tracking-tight">{t("facturas.form.nuevoComprobante")}</h3>
+              <p className="text-muted text-xs mt-0.5">{t("facturas.form.autoDesc")}</p>
             </div>
             <button onClick={() => setMostrarForm(false)}
               className="text-muted text-xs px-3 py-1.5 rounded-lg hover:text-primary hover:bg-surface transition-colors">
-              Cerrar
+              {t("facturas.form.cerrar")}
             </button>
           </div>
 
           <div className="mb-6">
-            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">Datos del comprobante</p>
+            <p className="text-muted text-xs uppercase tracking-wide font-medium mb-3">{t("facturas.form.datosComprobante")}</p>
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">
                 <label className="text-muted text-xs mb-1.5 block">
-                  Proyecto <span className="text-accent">*</span>
+                  {t("facturas.form.proyecto")} <span className="text-accent">*</span>
                 </label>
                 <Select value={proyectoId} onChange={(v) => { setProyectoId(v); autocompletarDesdeProyecto(v); }}
                   options={[
-                    { value: "", label: "Selecciona un proyecto" },
+                    { value: "", label: t("facturas.form.seleccionaProyecto") },
                     ...proyectos.map((p) => ({ value: p.id, label: p.nombre + " — " + p.cliente_nombre })),
                   ]} />
               </div>
               <div>
                 <label className="text-muted text-xs mb-1.5 block">
-                  Vencimiento <span className="text-accent">*</span>
+                  {t("facturas.form.vencimiento")} <span className="text-accent">*</span>
                 </label>
                 <input value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)}
                   type="date"
@@ -755,11 +760,11 @@ let y = 62;
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-muted text-xs uppercase tracking-wide font-medium">
-                Conceptos <span className="text-accent">*</span>
+                {t("facturas.conceptos")} <span className="text-accent">*</span>
               </p>
               <button onClick={() => setConceptos([...conceptos, { descripcion: "", monto: 0 }])}
                 className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10 transition-colors">
-                + Agregar concepto
+                + {t("facturas.form.agregarConcepto")}
               </button>
             </div>
             <div className="space-y-2 mb-3">

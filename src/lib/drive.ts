@@ -1,18 +1,32 @@
 import { supabase } from "./supabase";
 
 // ─── Token Management ────────────────────────────────────────────────────────
+//
+// NOTA DE SEGURIDAD: Para apps desktop, Google recomienda crear un OAuth app
+// de tipo "Desktop application" en Google Cloud Console. Este tipo NO requiere
+// client_secret. Si migras, elimina VITE_GOOGLE_CLIENT_SECRET de .env y no
+// incluirás ningún secreto en el cliente. La app actual funciona con el
+// client_secret opcional (backward-compatible).
 
 async function refreshAccessToken(userId: string, refreshToken: string): Promise<string | null> {
   try {
+    const params: Record<string, string> = {
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    };
+
+    // Solo incluir client_secret si está configurado.
+    // Para OAuth tipo "Desktop application" no es necesario.
+    const secret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+    if (secret) {
+      params.client_secret = secret;
+    }
+
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        client_secret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-      }),
+      body: new URLSearchParams(params),
     });
 
     const data = await res.json();
@@ -23,7 +37,6 @@ async function refreshAccessToken(userId: string, refreshToken: string): Promise
       .from("integraciones")
       .update({
         access_token: data.access_token,
-        // Google devuelve un nuevo expiry — guardamos para futuras optimizaciones
         ...(data.expires_in && {
           token_expiry: new Date(Date.now() + data.expires_in * 1000).toISOString(),
         }),
@@ -129,10 +142,15 @@ export async function tieneDriveConectado(): Promise<boolean> {
   return !!data;
 }
 
+function escapeDriveQ(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 export async function buscarCarpeta(nombre: string, parentId?: string): Promise<CarpetaDrive[]> {
+  const safe = escapeDriveQ(nombre);
   const query = parentId
-    ? "mimeType='application/vnd.google-apps.folder' and name='" + nombre.replace(/'/g, "\\'") + "' and '" + parentId + "' in parents and trashed=false"
-    : "mimeType='application/vnd.google-apps.folder' and name='" + nombre.replace(/'/g, "\\'") + "' and 'root' in parents and trashed=false";
+    ? "mimeType='application/vnd.google-apps.folder' and name='" + safe + "' and '" + parentId + "' in parents and trashed=false"
+    : "mimeType='application/vnd.google-apps.folder' and name='" + safe + "' and 'root' in parents and trashed=false";
 
   try {
     const res = await driveRequest(

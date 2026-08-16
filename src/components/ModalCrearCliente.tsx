@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import type { ContratoClienteInfo } from "../lib/clientesContrato";
 import { crearClienteDesdeContrato } from "../lib/clientesContrato";
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function ModalCrearCliente({ contrato, onConfirmado, onCancelar }: Props) {
+  const { t } = useTranslation();
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,12 +22,12 @@ export default function ModalCrearCliente({ contrato, onConfirmado, onCancelar }
     setCreando(false);
     if (id) {
       sendNotification({
-        title: "Cliente creado",
-        body: contrato.cliente_nombre + " fue agregado a tus clientes.",
+        title: t("modalCliente.notificacionTitulo"),
+        body: t("modalCliente.notificacionCuerpo", { nombre: contrato.cliente_nombre }),
       });
       onConfirmado();
     } else {
-      setError("No se pudo crear el cliente. Revisa tu conexión e inténtalo de nuevo.");
+      setError(t("modalCliente.error"));
     }
   }
 
@@ -39,11 +41,11 @@ export default function ModalCrearCliente({ contrato, onConfirmado, onCancelar }
             </svg>
           </div>
           <div>
-            <h3 className="text-primary font-medium mb-1">¿Crear cliente?</h3>
+            <h3 className="text-primary font-medium mb-1">{t("modalCliente.titulo")}</h3>
             <p className="text-muted text-sm">
-              El contrato <span className="text-primary font-medium">{contrato.numero}</span> fue firmado por{" "}
-              <span className="text-primary font-medium">{contrato.cliente_nombre}</span>, que aún no está en tu
-              lista de clientes. ¿Quieres agregarlo como cliente y darle acceso a su portal?
+              {t("modalCliente.descPre")} <span className="text-primary font-medium">{contrato.numero}</span>{" "}
+              {t("modalCliente.descMid")} <span className="text-primary font-medium">{contrato.cliente_nombre}</span>
+              {t("modalCliente.descPost")}
             </p>
           </div>
         </div>
@@ -53,11 +55,11 @@ export default function ModalCrearCliente({ contrato, onConfirmado, onCancelar }
         <div className="flex flex-col gap-2.5 mt-5">
           <button onClick={crear} disabled={creando}
             className="w-full bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-            {creando ? "Creando..." : "Crear cliente y portal"}
+            {creando ? t("modalCliente.creando") : t("modalCliente.crearClientePortal")}
           </button>
           <button onClick={onCancelar} disabled={creando}
             className="w-full text-sm text-primary border border-edge px-4 py-2.5 rounded-lg hover:bg-surface transition-colors">
-            No, gracias
+            {t("modalCliente.noGracias")}
           </button>
         </div>
       </div>

@@ -85,6 +85,11 @@ begin
     return json_build_object('ok', false, 'error', 'firma_requerida');
   end if;
 
+  -- Limitar tamaño de firma (máx ~375KB en base64 ≈ 500K caracteres)
+  if length(p_firma_png) > 500000 then
+    return json_build_object('ok', false, 'error', 'firma_demasiado_grande');
+  end if;
+
   update public.contratos
   set firma_cliente = p_firma_png,
       nombre_firmante_cliente = trim(p_nombre_firmante),
