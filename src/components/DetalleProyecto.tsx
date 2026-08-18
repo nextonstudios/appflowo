@@ -31,6 +31,7 @@ interface Proyecto {
   cliente_id: string;
   folder_id?: string;
   folder_url?: string;
+  cobro_por_tareas?: boolean;
 }
 
 interface MensajePortal {
@@ -46,6 +47,7 @@ interface Props {
   proyecto: Proyecto;
   onVolver: () => void;
   onGenerarFactura?: (proyectoId: string) => void;
+  onEditar?: (proyecto: Proyecto) => void;
 }
 
 function getEstadoConfig(t: TFunction): Record<string, { label: string; color: string }> {
@@ -69,7 +71,7 @@ function formatFecha(iso: string, locale: string) {
     " " + fecha.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
-function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
+function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Props) {
   const { t, i18n } = useTranslation();
   const estadoConfig = getEstadoConfig(t);
   const localeFechas = i18n.language === "en" ? "en-US" : "es-ES";
@@ -96,11 +98,13 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   const [subtareaAbiertaId, setSubtareaAbiertaId] = useState<string | null>(null);
   const [nuevoTituloSubtarea, setNuevoTituloSubtarea] = useState("");
   const [nuevaSubtareaPublica, setNuevaSubtareaPublica] = useState(false);
+  const [nuevoValor, setNuevoValor] = useState("");
   const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
   const [editTitulo, setEditTitulo] = useState("");
   const [editPrioridad, setEditPrioridad] = useState<"alta" | "media" | "baja">("media");
   const [editPublica, setEditPublica] = useState(true);
   const [editDeadline, setEditDeadline] = useState("");
+  const [editValor, setEditValor] = useState("");
   const [editSubtareas, setEditSubtareas] = useState<Subtarea[]>([]);
   const [editSubtareaInput, setEditSubtareaInput] = useState("");
   const [editNota, setEditNota] = useState("");
@@ -199,6 +203,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       folder_url: tarea.folder_url || undefined,
       subtareas: Array.isArray(tarea.subtareas) ? tarea.subtareas : [],
       aprobada_cliente: tarea.aprobada_cliente || false,
+      valor: tarea.valor || 0,
     }));
 
     setTareas(tareasMapeadas);
@@ -253,7 +258,11 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
   const completadas = tareas.filter((tarea) => tarea.completada).length;
   const progreso = tareas.length > 0 ? Math.round((completadas / tareas.length) * 100) : 0;
   const todasCompletadas = tareas.length > 0 && completadas === tareas.length;
-  const presupuesto = proyecto.servicios?.reduce((acc, s) => acc + s.precio, 0) || 0;
+  const presupuesto = proyecto.cobro_por_tareas
+    ? tareas.reduce((acc, t) => acc + (t.valor || 0), 0)
+    : (proyecto.servicios?.reduce((acc, s) => acc + s.precio, 0) || 0);
+  const totalTareasValor = tareas.reduce((acc, t) => acc + (t.valor || 0), 0);
+  const totalTareasCompletadasValor = tareas.filter(t => t.completada).reduce((acc, t) => acc + (t.valor || 0), 0);
   const modo = proyecto.servicios?.[0]?.modo || "fijo";
   const proyectoTieneCarpeta = !!proyecto.folder_id;
   const feedbacks = mensajesPortal.filter(m => m.tipo === "feedback");
@@ -333,6 +342,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       estado: "pendiente",
       folder_id,
       folder_url,
+      valor: proyecto.cobro_por_tareas ? Number(nuevoValor) || 0 : 0,
     }).select().single();
 
     if (data) {
@@ -358,6 +368,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
         folder_url: data.folder_url || undefined,
         subtareas: subtareasCreadas,
         aprobada_cliente: false,
+        valor: Number(nuevoValor) || 0,
       }];
       setTareas(nuevasTareas);
       await supabase.from("proyectos").update({
@@ -373,6 +384,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     setSubtareaInput("");
     setCrearCarpetaTarea(false);
     setMostrarFormTarea(false);
+    setNuevoValor("");
   }
 
   function agregarSubtareaInput() {
@@ -391,6 +403,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     setEditPrioridad(tarea.prioridad);
     setEditPublica(tarea.publica);
     setEditDeadline(tarea.deadline || "");
+    setEditValor(String(tarea.valor || ""));
     setEditSubtareas(tarea.subtareas.map((s) => ({ ...s })));
     setEditSubtareaInput("");
     setEditNota(tarea.nota);
@@ -409,6 +422,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       visible_cliente: editPublica,
       deadline: editDeadline || null,
       subtareas,
+      valor: proyecto.cobro_por_tareas ? Number(editValor) || 0 : 0,
     }).eq("id", tarea.id);
 
     const { error: errNota } = await supabase.from("tareas").update({ nota }).eq("id", tarea.id);
@@ -428,6 +442,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
       prioridad: editPrioridad,
       deadline: editDeadline,
       nota,
+      valor: Number(editValor) || 0,
       notas: nota
         ? (tarea.notas.length > 0
             ? tarea.notas.map((n, i) => (i === 0 ? { ...n, texto: nota, fecha: new Date().toISOString() } : n))
@@ -529,6 +544,8 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     setEditDeadline,
     editPublica,
     setEditPublica,
+    editValor,
+    setEditValor,
     editSubtareas,
     setEditSubtareas,
     editSubtareaInput,
@@ -549,6 +566,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
     onAgregarSubtarea: agregarSubtarea,
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
+    cobroPorTareas: proyecto.cobro_por_tareas,
   };
 
   return (
@@ -603,6 +621,11 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                 {t("detalleProyecto.verCarpetaDrive")}
               </button>
             )}
+            {proyecto.cobro_por_tareas && (
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-violet/10 text-violet border border-violet/30">
+                {t("proyectos.cobroPorTareas")}
+              </span>
+            )}
           </div>
           <p className="text-muted text-sm">
             {proyecto.cliente_nombre}
@@ -628,6 +651,12 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
               {t("detalleProyecto.eliminar")}
             </button>
           )}
+          {onEditar && (
+            <button onClick={() => onEditar(proyecto)}
+              className="bg-surface border border-edge text-primary font-medium px-3 py-2 rounded-lg text-sm hover:border-accent/40">
+              {t("detalleProyecto.editar")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -648,24 +677,32 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-canvas border border-edge rounded-xl p-5">
-          <p className="text-muted text-xs mb-1">{modo === "fijo" ? t("detalleProyecto.presupuestoTotal") : t("detalleProyecto.tarifaPorHora")}</p>
-          <p className="text-2xl font-bold text-primary">{formatearMoneda(presupuesto, moneda)}{modo === "horas" ? "/hr" : ""}</p>
+          <p className="text-muted text-xs mb-1">{proyecto.cobro_por_tareas ? t("detalleProyecto.presupuestoTareas") : (modo === "fijo" ? t("detalleProyecto.presupuestoTotal") : t("detalleProyecto.tarifaPorHora"))}</p>
+          <p className="text-2xl font-bold text-primary">{formatearMoneda(presupuesto, moneda)}{!proyecto.cobro_por_tareas && modo === "horas" ? "/hr" : ""}</p>
+          {proyecto.cobro_por_tareas && (
+            <p className="text-muted text-xs mt-1">{t("detalleProyecto.totalTareasValor", { total: tareas.length, valor: formatearMoneda(totalTareasValor, moneda) })}</p>
+          )}
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-5">
           <p className="text-muted text-xs mb-1">{t("detalleProyecto.horasTrabajadas")}</p>
           <p className="text-2xl font-bold text-primary">{formatTiempo(totalSegundos)}</p>
+          {proyecto.cobro_por_tareas && (
+            <p className="text-muted text-xs mt-1">{t("detalleProyecto.totalTareasValor", { total: completadas, valor: formatearMoneda(totalTareasCompletadasValor, moneda) })}</p>
+          )}
         </div>
         <div className="bg-canvas border border-edge rounded-xl p-5">
-  <p className="text-muted text-xs mb-1">{modo === "fijo" ? t("detalleProyecto.tarifaRealImplicita") : t("detalleProyecto.totalAcumulado")}</p>
+  <p className="text-muted text-xs mb-1">{proyecto.cobro_por_tareas ? t("detalleProyecto.totalTareasValor", { total: completadas, valor: "" }).split(":")[0] : (modo === "fijo" ? t("detalleProyecto.tarifaRealImplicita") : t("detalleProyecto.totalAcumulado"))}</p>
   <p className="text-2xl font-bold text-accent">
-    {modo === "fijo"
-      ? totalHoras >= 1
-        ? formatearMoneda(Math.round(presupuesto / totalHoras), moneda) + "/hr"
-        : "—"
-      : formatearMoneda(Math.round(totalHoras * presupuesto), moneda)
+    {proyecto.cobro_por_tareas
+      ? formatearMoneda(totalTareasCompletadasValor, moneda)
+      : modo === "fijo"
+        ? totalHoras >= 1
+          ? formatearMoneda(Math.round(presupuesto / totalHoras), moneda) + "/hr"
+          : "—"
+        : formatearMoneda(Math.round(totalHoras * presupuesto), moneda)
     }
   </p>
-  {modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
+  {!proyecto.cobro_por_tareas && modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
     <p className="text-muted text-xs mt-1">{t("detalleProyecto.disponible1h")}</p>
   )}
 </div>
@@ -819,6 +856,18 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura }: Props) {
                   </div>
                 )}
               </div>
+
+              {proyecto.cobro_por_tareas && (
+                <div className="mb-3">
+                  <p className="text-muted text-xs mb-2">{t("detalleProyecto.valorTarea")}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted text-xs">$</span>
+                    <input value={nuevoValor} onChange={(e) => setNuevoValor(e.target.value)}
+                      type="number" placeholder="0"
+                      className="w-32 bg-canvas border border-edge rounded-lg px-3 py-2 text-primary text-xs focus:outline-none focus:border-accent" />
+                  </div>
+                </div>
+              )}
 
               <div className="mb-3">
                 <p className="text-muted text-xs mb-2">{t("detalleProyecto.nota")}</p>

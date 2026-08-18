@@ -154,14 +154,19 @@ function Facturas({ proyectoPreseleccionado, onLimpiarProyecto }: FacturasProps)
     }
 
     const [{ data: proyectoData }, { data: registrosData }, { data: tareasData }] = await Promise.all([
-      supabase.from("proyectos").select("servicios, deadline").eq("id", pid).single(),
+      supabase.from("proyectos").select("servicios, deadline, cobro_por_tareas").eq("id", pid).single(),
       supabase.from("registros_tiempo").select("duracion, descripcion").eq("proyecto_id", pid),
-      supabase.from("tareas").select("nombre").eq("proyecto_id", pid).eq("completada", true),
+      supabase.from("tareas").select("nombre, valor").eq("proyecto_id", pid).eq("completada", true),
     ]);
 
     const nuevosConceptos: Concepto[] = [];
 
-    if (proyectoData?.servicios && Array.isArray(proyectoData.servicios)) {
+    if (proyectoData?.cobro_por_tareas) {
+      const tareasCompletadas = (tareasData || []).filter((t: any) => t.valor && t.valor > 0);
+      tareasCompletadas.forEach((t: any) => {
+        nuevosConceptos.push({ descripcion: t.nombre, monto: t.valor });
+      });
+    } else if (proyectoData?.servicios && Array.isArray(proyectoData.servicios)) {
       proyectoData.servicios.forEach((s: any) => {
         if (s.modo === "fijo") {
           nuevosConceptos.push({ descripcion: s.nombre, monto: s.precio });

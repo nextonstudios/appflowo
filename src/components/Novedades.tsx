@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-export const NOVEDADES_VERSION = "1.2.2";
+export const NOVEDADES_VERSION = "1.3.0";
 
 export function debeMostrarNovedades(tutorialCompletado: boolean): boolean {
   if (!tutorialCompletado) return false;
@@ -27,24 +27,14 @@ function getItems(t: TFunction): ItemNovedad[] {
     descripcion: t("novedades.items.0.desc"),
   },
   {
-    emoji: "☁️",
+    emoji: "✏️",
     titulo: t("novedades.items.1.titulo"),
     descripcion: t("novedades.items.1.desc"),
   },
   {
-    emoji: "📄",
+    emoji: "💰",
     titulo: t("novedades.items.2.titulo"),
     descripcion: t("novedades.items.2.desc"),
-  },
-  {
-    emoji: "✍️",
-    titulo: t("novedades.items.3.titulo"),
-    descripcion: t("novedades.items.3.desc"),
-  },
-  {
-    emoji: "🎨",
-    titulo: t("novedades.items.4.titulo"),
-    descripcion: t("novedades.items.4.desc"),
   },
 ];
 }

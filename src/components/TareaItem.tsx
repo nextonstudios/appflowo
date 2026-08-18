@@ -32,6 +32,7 @@ export interface Tarea {
   folder_url?: string;
   subtareas: Subtarea[];
   aprobada_cliente: boolean;
+  valor?: number;
 }
 
 export const prioridadConfig = {
@@ -73,6 +74,7 @@ interface Props {
   editPrioridad: "alta" | "media" | "baja";
   editDeadline: string;
   editPublica: boolean;
+  editValor: string;
   editSubtareas: Subtarea[];
   editSubtareaInput: string;
   editNota: string;
@@ -84,6 +86,7 @@ interface Props {
   setEditPrioridad: (v: "alta" | "media" | "baja") => void;
   setEditDeadline: (v: string) => void;
   setEditPublica: (v: boolean) => void;
+  setEditValor: (v: string) => void;
   setEditSubtareas: (v: Subtarea[]) => void;
   setEditSubtareaInput: (v: string) => void;
   setEditNota: (v: string) => void;
@@ -98,18 +101,20 @@ interface Props {
   onAgregarSubtarea: (tareaId: string) => void;
   onToggleSubtarea: (tareaId: string, subtareaId: number) => void;
   onEliminarSubtarea: (tareaId: string, subtareaId: number) => void;
+  cobroPorTareas?: boolean;
 }
 
 export default function TareaItem({
   tarea, deshabilitado,
-  editandoTareaId, editTitulo, editPrioridad, editDeadline, editPublica,
+  editandoTareaId, editTitulo, editPrioridad, editDeadline, editPublica, editValor,
   editSubtareas, editSubtareaInput, editNota,
   subtareaAbiertaId, nuevoTituloSubtarea, nuevaSubtareaPublica,
-  setEditandoTareaId, setEditTitulo, setEditPrioridad, setEditDeadline, setEditPublica,
+  setEditandoTareaId, setEditTitulo, setEditPrioridad, setEditDeadline, setEditPublica, setEditValor,
   setEditSubtareas, setEditSubtareaInput, setEditNota,
   setSubtareaAbiertaId, setNuevoTituloSubtarea, setNuevaSubtareaPublica,
   onToggleTarea, onCambiarEstado, onGuardarEdicion, onAbrirEdicion, onEliminarTarea,
   onAgregarSubtarea, onToggleSubtarea, onEliminarSubtarea,
+  cobroPorTareas,
 }: Props) {
   const { t } = useTranslation();
   const [plegada, setPlegada] = useState(false);
@@ -172,6 +177,16 @@ export default function TareaItem({
               <input value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)} type="date"
                 className="bg-surface border border-edge rounded-lg px-3 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
             </label>
+            {cobroPorTareas && (
+              <label className="flex items-center gap-2">
+                <span className="text-muted text-xs">{t("tareaItem.valor")}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted text-xs">$</span>
+                  <input value={editValor} onChange={(e) => setEditValor(e.target.value)} type="number" placeholder="0"
+                    className="w-20 bg-surface border border-edge rounded-lg px-2 py-1.5 text-primary text-xs focus:outline-none focus:border-accent" />
+                </div>
+              </label>
+            )}
           </div>
           <div>
             <p className="text-muted text-xs mb-2">{t("tareaItem.subtareas")}</p>
@@ -254,6 +269,9 @@ export default function TareaItem({
                   {tarea.publica && <span className="text-muted text-xs">👁 {t("tareaItem.visible")}</span>}
                   {tarea.aprobada_cliente && (
                     <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-full font-medium">✓ {t("tareaItem.aprobada")}</span>
+                  )}
+                  {tarea.valor != null && tarea.valor > 0 && (
+                    <span className="text-violet text-xs bg-violet/10 px-2 py-0.5 rounded-full font-medium">{t("tareaItem.valor")}: ${tarea.valor}</span>
                   )}
                   {tarea.folder_url && (
                     <button onClick={() => openUrl(tarea.folder_url!)} className="text-muted text-xs hover:text-accent">📁 {t("tareaItem.carpeta")}</button>

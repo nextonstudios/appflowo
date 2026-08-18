@@ -27,6 +27,7 @@ interface Proyecto {
   tareas_completadas: number;
   folder_id?: string;
   folder_url?: string;
+  cobro_por_tareas?: boolean;
 }
 
 interface ClienteOpcion {
@@ -81,6 +82,10 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
   const [guardando, setGuardando] = useState(false);
   const [catalogo, setCatalogo] = useState<{id: number, nombre: string, modo: "fijo" | "horas", precio: number}[]>([]);
   const [notaInicial, setNotaInicial] = useState("");
+  const [cobroPorTareas, setCobroPorTareas] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [menuAbiertoId, setMenuAbiertoId] = useState<string | null>(null);
+  const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<string | null>(null);
 
   // Drive
   const [hayDrive, setHayDrive] = useState(false);
@@ -96,6 +101,16 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
     cargarDatos();
     tieneDriveConectado().then(setHayDrive);
   }, []);
+
+  useEffect(() => {
+    if (!menuAbiertoId) return;
+    function cerrar(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-menu-proyecto]")) setMenuAbiertoId(null);
+    }
+    document.addEventListener("click", cerrar);
+    return () => document.removeEventListener("click", cerrar);
+  }, [menuAbiertoId]);
 
   async function cargarDatos() {
     setCargando(true);
@@ -118,6 +133,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
       tareas: p.tareas_total || 0,
       tareas_completadas: p.tareas_completadas || 0,
       fecha_inicio: p.fecha_inicio || "",
+      cobro_por_tareas: p.cobro_por_tareas || false,
     }));
 
     setProyectos(proyectosMapeados);
@@ -171,17 +187,19 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
     setServicioCustom("");
     setPrecioCustom("");
     setNotaInicial("");
+    setCobroPorTareas(false);
+    setEditandoId(null);
   }
 
   async function agregarProyecto() {
-    if (!nombre || !clienteId || serviciosSeleccionados.length === 0) return;
+    if (!nombre || !clienteId || (!cobroPorTareas && serviciosSeleccionados.length === 0)) return;
     setGuardando(true);
     const { data: { user } } = await supabase.auth.getUser();
 
     let folder_id: string | null = null;
     let folder_url: string | null = null;
 
-    if (hayDrive && crearCarpetaDrive && clienteTieneCarpeta) {
+    if (!editandoId && hayDrive && crearCarpetaDrive && clienteTieneCarpeta) {
       try {
         const parentId = clienteSeleccionado!.folder_id!;
         const existentes = await buscarCarpeta(nombre, parentId);
@@ -207,28 +225,69 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
       ? [{ id: Date.now(), texto: notaInicial.trim(), fecha: new Date().toISOString().split("T")[0] }]
       : [];
 
-    const payload = {
-      user_id: user?.id,
-      cliente_id: clienteId,
-      nombre,
-      servicios: serviciosSeleccionados,
-      fecha_inicio: fechaInicio || null,
-      deadline: deadline || null,
-      estado: "activo",
-      tareas_total: 0,
-      tareas_completadas: 0,
-      folder_id,
-      folder_url,
-      notas,
-    };
+    if (editandoId) {
+      const payload: Record<string, unknown> = {
+        cliente_id: clienteId,
+        nombre,
+        servicios: serviciosSeleccionados,
+        fecha_inicio: fechaInicio || null,
+        deadline: deadline || null,
+        cobro_por_tareas: cobroPorTareas,
+      };
+      if (folder_id) { payload.folder_id = folder_id; payload.folder_url = folder_url; }
+      if (notas.length > 0) payload.notas = notas;
 
-    const { error } = await supabase.from("proyectos").insert(payload);
+      const { error } = await supabase.from("proyectos").update(payload).eq("id", editandoId);
+      setGuardando(false);
+      if (!error) {
+        cerrarForm();
+        cargarDatos();
+      }
+    } else {
+      const payload = {
+        user_id: user?.id,
+        cliente_id: clienteId,
+        nombre,
+        servicios: serviciosSeleccionados,
+        fecha_inicio: fechaInicio || null,
+        deadline: deadline || null,
+        estado: "activo",
+        tareas_total: 0,
+        tareas_completadas: 0,
+        folder_id,
+        folder_url,
+        notas,
+        cobro_por_tareas: cobroPorTareas,
+      };
 
-    setGuardando(false);
-    if (!error) {
-      cerrarForm();
-      cargarDatos();
+      const { error } = await supabase.from("proyectos").insert(payload);
+      setGuardando(false);
+      if (!error) {
+        cerrarForm();
+        cargarDatos();
+      }
     }
+  }
+
+  function abrirEdicion(proyecto: Proyecto) {
+    setEditandoId(proyecto.id);
+    setNombre(proyecto.nombre);
+    setClienteId(proyecto.cliente_id);
+    setFechaInicio(proyecto.fecha_inicio || "");
+    setDeadline(proyecto.deadline || "");
+    setServiciosSeleccionados([...proyecto.servicios]);
+    setCobroPorTareas(proyecto.cobro_por_tareas || false);
+    setNotaInicial("");
+    setMostrarForm(true);
+    setMenuAbiertoId(null);
+  }
+
+  async function eliminarProyecto(id: string) {
+    await supabase.from("tareas").delete().eq("proyecto_id", id);
+    await supabase.from("proyectos").delete().eq("id", id);
+    setConfirmandoEliminarId(null);
+    setMenuAbiertoId(null);
+    cargarDatos();
   }
 
   const proyectosFiltrados = proyectos.filter((p) => {
@@ -252,6 +311,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
         proyecto={proyectoSeleccionado}
         onVolver={() => setProyectoSeleccionado(null)}
         onGenerarFactura={onGenerarFactura}
+        onEditar={(p) => { setProyectoSeleccionado(null); abrirEdicion(p as any); }}
       />
     );
   }
@@ -262,6 +322,26 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
   return (
     <div className="p-8">
+
+      {/* Modal eliminar proyecto */}
+      {confirmandoEliminarId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-canvas border border-edge rounded-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-primary font-medium mb-2">{t("proyectos.confirmarEliminar.titulo")}</h3>
+            <p className="text-muted text-sm mb-6">{t("proyectos.confirmarEliminar.desc")}</p>
+            <div className="flex gap-3">
+              <button onClick={() => eliminarProyecto(confirmandoEliminarId)}
+                className="bg-coral text-white font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 flex-1">
+                {t("proyectos.confirmarEliminar.confirmar")}
+              </button>
+              <button onClick={() => setConfirmandoEliminarId(null)}
+                className="bg-surface border border-edge text-primary px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface2 transition-colors flex-1">
+                {t("proyectos.cancelar")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal carpeta existente */}
       {modalCarpeta && (
@@ -361,7 +441,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
       {mostrarForm && (
         <div className="bg-canvas border border-edge rounded-2xl p-5 mb-6">
-          <h3 className="text-primary font-semibold mb-1">{t("proyectos.nuevoProyecto")}</h3>
+          <h3 className="text-primary font-semibold mb-1">{editandoId ? t("proyectos.editarProyecto") : t("proyectos.nuevoProyecto")}</h3>
           <p className="text-muted text-xs mb-4">{t("proyectos.soloNombreCliente")}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
             <div>
@@ -387,6 +467,31 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
               <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date"
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
+          </div>
+
+          {/* Cobro por tareas */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setCobroPorTareas(!cobroPorTareas)}
+              className={"flex items-center gap-3 w-full text-left rounded-xl border p-3.5 transition-all " +
+                (cobroPorTareas
+                  ? "bg-accent/10 border-accent/50"
+                  : "bg-surface border-edge hover:border-accent/40")}
+            >
+              <span className={"w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors " +
+                (cobroPorTareas ? "bg-accent border-accent" : "border-edge2")}>
+                {cobroPorTareas && (
+                  <svg className="w-3 h-3 text-onaccent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </span>
+              <div>
+                <p className={"text-sm font-medium " + (cobroPorTareas ? "text-accent" : "text-primary")}>{t("proyectos.cobroPorTareas")}</p>
+                <p className="text-muted text-xs mt-0.5">{t("proyectos.cobroPorTareasDesc")}</p>
+              </div>
+            </button>
           </div>
 
           {/* Crear subcarpeta en */}
@@ -493,6 +598,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
             </div>
           </div>
 
+          {!cobroPorTareas && (
           <div className="mb-4">
             <label className="text-muted text-xs mb-2 block">{t("proyectos.serviciosCatalogo")}</label>
             <div className="flex flex-wrap gap-2 mb-3">
@@ -551,6 +657,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
               </div>
             </div>
           </div>
+          )}
 
           {/* Nota inicial */}
           <div className="mb-4">
@@ -566,9 +673,9 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
           <div className="flex gap-3">
             <button onClick={agregarProyecto}
-              disabled={guardando || !nombre || !clienteId || serviciosSeleccionados.length === 0}
+              disabled={guardando || !nombre || !clienteId || (!cobroPorTareas && serviciosSeleccionados.length === 0)}
               className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-50">
-              {guardando ? t("proyectos.creandoProyecto") : t("proyectos.crearProyecto")}
+              {guardando ? t("proyectos.guardando") : editandoId ? t("proyectos.guardarCambios") : t("proyectos.crearProyecto")}
             </button>
             <button onClick={cerrarForm}
               className="text-muted px-4 py-2 rounded-lg text-sm hover:text-primary">
@@ -628,6 +735,26 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                     <div className="bg-accent h-1.5 rounded-full" style={{ width: progreso + "%" }} />
                   </div>
                 </div>
+                <div className="relative" data-menu-proyecto>
+                  <button onClick={(e) => { e.stopPropagation(); setMenuAbiertoId(menuAbiertoId === proyecto.id ? null : proyecto.id); }}
+                    className="text-muted hover:text-primary p-1 rounded-lg hover:bg-surface transition-colors">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                    </svg>
+                  </button>
+                  {menuAbiertoId === proyecto.id && (
+                    <div className="absolute right-0 top-8 z-30 bg-surface border border-edge rounded-xl shadow-xl py-1 min-w-[140px]">
+                      <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
+                        className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
+                        {t("proyectos.editar")}
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
+                        className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
+                        {t("proyectos.eliminar")}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           }
@@ -643,6 +770,26 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 <div className="flex items-center gap-2">
                   {proyecto.folder_url && <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">Drive ✓</span>}
                   <span className={"text-xs px-2 py-1 rounded-full font-medium " + config.color}>{config.label}</span>
+                  <div className="relative" data-menu-proyecto>
+                    <button onClick={(e) => { e.stopPropagation(); setMenuAbiertoId(menuAbiertoId === proyecto.id ? null : proyecto.id); }}
+                      className="text-muted hover:text-primary p-1 rounded-lg hover:bg-surface transition-colors">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                      </svg>
+                    </button>
+                    {menuAbiertoId === proyecto.id && (
+                      <div className="absolute right-0 top-8 z-30 bg-surface border border-edge rounded-xl shadow-xl py-1 min-w-[140px]">
+                        <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
+                          className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
+                          {t("proyectos.editar")}
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
+                          className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
+                          {t("proyectos.eliminar")}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="mb-3">

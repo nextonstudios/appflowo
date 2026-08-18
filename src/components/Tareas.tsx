@@ -16,6 +16,7 @@ interface ProyectoOpcion {
   nombre: string;
   folder_id?: string;
   folder_url?: string;
+  cobro_por_tareas?: boolean;
 }
 
 function getPrioridadLabels(t: TFunction) {
@@ -53,6 +54,7 @@ function Tareas() {
   const [editPrioridad, setEditPrioridad] = useState<"alta" | "media" | "baja">("media");
   const [editDeadline, setEditDeadline] = useState("");
   const [editPublica, setEditPublica] = useState(false);
+  const [editValor, setEditValor] = useState("");
   const [editSubtareas, setEditSubtareas] = useState<Subtarea[]>([]);
   const [editSubtareaInput, setEditSubtareaInput] = useState("");
   const [editNota, setEditNota] = useState("");
@@ -65,6 +67,7 @@ function Tareas() {
   // Drive
   const [hayDrive, setHayDrive] = useState(false);
   const [crearCarpetaTarea, setCrearCarpetaTarea] = useState(false);
+  const [nuevoValor, setNuevoValor] = useState("");
   const [modalCarpeta, setModalCarpeta] = useState<{
     nombre: string;
     resolve: (opcion: "usar" | "nueva") => void;
@@ -80,7 +83,7 @@ function Tareas() {
     const { data: { user } } = await supabase.auth.getUser();
     const [{ data: tareasData }, { data: proyectosData }] = await Promise.all([
       supabase.from("tareas").select("*").eq("user_id", user?.id).order("created_at", { ascending: false }),
-      supabase.from("proyectos").select("id, nombre, folder_id, folder_url").eq("user_id", user?.id),
+      supabase.from("proyectos").select("id, nombre, folder_id, folder_url, cobro_por_tareas").eq("user_id", user?.id),
     ]);
     setProyectos(proyectosData || []);
     const proyectosMap = Object.fromEntries((proyectosData || []).map((p: ProyectoOpcion) => [p.id, p.nombre]));
@@ -96,6 +99,7 @@ function Tareas() {
       folder_id: td.folder_id || undefined,
       folder_url: td.folder_url || undefined,
       aprobada_cliente: td.aprobada_cliente || false,
+      valor: td.valor || 0,
     }));
     setTareas(tareasMapeadas as TareaTab[]);
     setCargando(false);
@@ -180,13 +184,14 @@ function Tareas() {
       subtareas: subtareasFinales.map((s, i) => ({ id: Date.now() + i, titulo: s, completada: false, publica: false })),
       folder_id,
       folder_url,
+      valor: proyectoSeleccionado?.cobro_por_tareas ? Number(nuevoValor) || 0 : 0,
     });
 
     await actualizarContadores(proyectoId);
 
     setTitulo(""); setProyectoId(""); setPrioridad("media"); setPublica(false);
     setDeadline(""); setCrearCarpetaTarea(false); setNuevaNotaTarea("");
-    setNuevasSubtareas([]); setSubtareaInput("");
+    setNuevasSubtareas([]); setSubtareaInput(""); setNuevoValor("");
     setMostrarForm(false); setGuardando(false);
     cargarDatos();
   }
@@ -228,6 +233,7 @@ function Tareas() {
       visible_cliente: editPublica,
       subtareas: editSubtareas,
       notas,
+      valor: Number(editValor) || 0,
     }).eq("id", id);
     setTareas(tareas.map((ta) =>
       ta.id === id ? {
@@ -239,6 +245,7 @@ function Tareas() {
         subtareas: editSubtareas,
         nota,
         notas,
+        valor: Number(editValor) || 0,
       } : ta
     ));
     setEditandoTareaId(null);
@@ -293,6 +300,7 @@ function Tareas() {
     setEditPrioridad(tarea.prioridad);
     setEditDeadline(tarea.deadline || "");
     setEditPublica(tarea.publica);
+    setEditValor(String(tarea.valor || ""));
     setEditSubtareas(tarea.subtareas.map((s) => ({ ...s })));
     setEditSubtareaInput("");
     setEditNota(tarea.nota);
@@ -335,6 +343,8 @@ function Tareas() {
     setEditDeadline,
     editPublica,
     setEditPublica,
+    editValor,
+    setEditValor,
     editSubtareas,
     setEditSubtareas,
     editSubtareaInput,
@@ -356,6 +366,11 @@ function Tareas() {
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
   };
+
+  function proyectoCobroPorTareas(proyectoId: string): boolean {
+    const p = proyectos.find((pr) => pr.id === proyectoId);
+    return !!p?.cobro_por_tareas;
+  }
 
   if (cargando) return <div className="p-8"><p className="text-muted text-sm">{t("tareas.cargando")}</p></div>;
 
@@ -519,6 +534,18 @@ function Tareas() {
             </label>
           </div>
 
+          {proyectoSeleccionado?.cobro_por_tareas && (
+            <div className="mb-4">
+              <label className="text-muted text-xs mb-1 block">{t("tareas.valor")}</label>
+              <div className="flex items-center gap-2">
+                <span className="text-muted text-xs">$</span>
+                <input value={nuevoValor} onChange={(e) => setNuevoValor(e.target.value)}
+                  type="number" placeholder={t("tareas.placeholderValor")}
+                  className="w-32 bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
+              </div>
+            </div>
+          )}
+
           {hayDrive && (
             proyectoTieneCarpeta ? (
               <div className="flex items-center gap-2 mb-4 bg-surface border border-edge rounded-lg px-3 py-2">
@@ -593,7 +620,7 @@ function Tareas() {
               <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasGrupo.length}</span>
             </div>
             <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-              {tareasGrupo.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
+              {tareasGrupo.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} cobroPorTareas={proyectoCobroPorTareas(tarea.proyecto_id)} {...propsComunes} />)}
             </div>
           </div>
         ))}
@@ -604,7 +631,7 @@ function Tareas() {
               <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasSinProyecto.length}</span>
             </div>
             <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-              {tareasSinProyecto.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} {...propsComunes} />)}
+              {tareasSinProyecto.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} cobroPorTareas={false} {...propsComunes} />)}
             </div>
           </div>
         )}
