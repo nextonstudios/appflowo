@@ -188,7 +188,7 @@ export default {
     },
   },
   novedades: {
-    titulo: "¡Flowo 1.4.0 está aquí!",
+    titulo: "¡Flowo 1.4.1 está aquí!",
     subtitulo: "Esto es lo nuevo de esta versión:",
     entendido: "¡Entendido!",
     items: [
@@ -355,8 +355,10 @@ export default {
         listo: "✓ Versión {{version}} lista para instalar",
         descargando: "Descargando v{{version}}...",
         disponible: "Nueva versión v{{version}} disponible",
-        instalar: "Instalar",
+        instalar: "Reiniciar e instalar",
         descargar: "Descargar v{{version}}",
+        actualizar: "Actualizar a v{{version}}",
+        error: "Error al buscar actualizaciones",
       },
       seguridad: "Seguridad",
       cambiarContrasena: "Cambiar contraseña",

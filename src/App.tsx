@@ -67,7 +67,7 @@ function App() {
   }, []);
 
   useNotificaciones(userId, onContratoFirmado);
-  const { estado: estadoUpdate, reiniciar, descargar } = useUpdater();
+  const { estado: estadoUpdate, verificar, reiniciar, descargar } = useUpdater();
 
   useEffect(() => {
     const tema = localStorage.getItem("flowo_tema") || "oscuro";
@@ -229,6 +229,7 @@ function App() {
               estadoUpdate={estadoUpdate}
               onReiniciar={reiniciar}
               onDescargar={descargar}
+              onVerificarUpdate={verificar}
               onCambiosSinGuardar={setCambiosSinGuardar}
               onRegistrarGuardar={(fn) => { guardarPerfilRef.current = fn; }}
               onRegistrarDescartar={(fn) => { descartarPerfilRef.current = fn; }}

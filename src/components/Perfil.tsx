@@ -31,6 +31,7 @@ interface Props {
   estadoUpdate: UpdateState;
   onReiniciar: () => void;
   onDescargar: () => void;
+  onVerificarUpdate: () => void;
   onCambiosSinGuardar?: (hayCambios: boolean) => void;
   onRegistrarGuardar?: (fn: () => void) => void;
   onRegistrarDescartar?: (fn: () => void) => void;
@@ -66,7 +67,7 @@ function getTamanos(t: TFunction): { id: string; nombre: string; px: number }[] 
   ];
 }
 
-function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onCambiosSinGuardar, onRegistrarGuardar, onRegistrarDescartar }: Props) {
+function Perfil({ onLogout, estadoUpdate, onReiniciar, onDescargar, onVerificarUpdate, onCambiosSinGuardar, onRegistrarGuardar, onRegistrarDescartar }: Props) {
   const { t, i18n } = useTranslation();
   const ACENTOS = getAcentos(t);
   const FUENTES = getFuentes(t);
@@ -1150,43 +1151,56 @@ if (cargando) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>}>
         {/* Actualizaciones: solo aparece si hay algo que hacer */}
-        {(estadoUpdate.listo || estadoUpdate.descargando || estadoUpdate.disponible) && (
-          <div className="bg-surface border border-edge rounded-xl p-4 flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-canvas border border-edge flex items-center justify-center text-accent flex-shrink-0">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
+        {(estadoUpdate.listo || estadoUpdate.descargando || estadoUpdate.disponible || estadoUpdate.error) && (
+          <div className="bg-surface border border-edge rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-canvas border border-edge flex items-center justify-center text-accent flex-shrink-0">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  {estadoUpdate.error ? (
+                    <p className="text-coral text-sm font-medium">{t("perfil.cuenta.update.error")}</p>
+                  ) : estadoUpdate.listo ? (
+                    <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.listo", { version: estadoUpdate.version })}</p>
+                  ) : estadoUpdate.descargando ? (
+                    <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.descargando", { version: estadoUpdate.version })}</p>
+                  ) : (
+                    <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.disponible", { version: estadoUpdate.version })}</p>
+                  )}
+                  {estadoUpdate.descargando && (
+                    <div className="mt-2 w-40 h-1.5 bg-edge rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all duration-300"
+                        style={{ width: `${estadoUpdate.progreso}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="min-w-0">
-                {estadoUpdate.listo ? (
-                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.listo", { version: estadoUpdate.version })}</p>
-                ) : estadoUpdate.descargando ? (
-                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.descargando", { version: estadoUpdate.version })}</p>
-                ) : (
-                  <p className="text-primary text-sm font-medium">{t("perfil.cuenta.update.disponible", { version: estadoUpdate.version })}</p>
-                )}
-                {estadoUpdate.descargando && (
-                  <div className="mt-2 w-40 h-1.5 bg-edge rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-accent rounded-full transition-all duration-300"
-                      style={{ width: `${estadoUpdate.progreso}%` }}
-                    />
-                  </div>
-                )}
-              </div>
+              {estadoUpdate.listo && (
+                <button onClick={onReiniciar}
+                  className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
+                  {t("perfil.cuenta.update.instalar")}
+                </button>
+              )}
+              {estadoUpdate.disponible && !estadoUpdate.descargando && !estadoUpdate.listo && (
+                <button onClick={onDescargar}
+                  className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
+                  {t("perfil.cuenta.update.actualizar", { version: estadoUpdate.version })}
+                </button>
+              )}
+              {estadoUpdate.error && (
+                <button                   onClick={onVerificarUpdate}
+                  className="text-muted text-xs font-medium px-4 py-2 rounded-lg border border-edge hover:text-primary transition-colors flex-shrink-0">
+                  Reintentar
+                </button>
+              )}
             </div>
-            {estadoUpdate.listo && (
-              <button onClick={onReiniciar}
-                className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                {t("perfil.cuenta.update.instalar")}
-              </button>
-            )}
-            {estadoUpdate.disponible && !estadoUpdate.descargando && !estadoUpdate.listo && (
-              <button onClick={onDescargar}
-                className="bg-accent text-onaccent text-xs font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity flex-shrink-0">
-                {t("perfil.cuenta.update.descargar", { version: estadoUpdate.version })}
-              </button>
+            {estadoUpdate.changelog && estadoUpdate.disponible && !estadoUpdate.descargando && (
+              <p className="text-muted2 text-xs mt-3 leading-relaxed border-t border-edge pt-3">{estadoUpdate.changelog}</p>
             )}
           </div>
         )}
