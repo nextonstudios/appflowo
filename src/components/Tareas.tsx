@@ -1,10 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
+import { usePersistedState } from "../hooks/usePersistedState";
 import Select, { type SelectOption } from "./Select";
-import TareaItem, { prioridadConfig, type Nota, type Subtarea, type Tarea } from "./TareaItem";
+import TareaItemSortable from "./TareaItemSortable";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { prioridadConfig, type Nota, type Subtarea, type Tarea } from "./TareaItem";
 
 type TareaTab = Tarea & {
   proyecto_id: string;
@@ -38,7 +42,7 @@ function Tareas() {
   const [filtroProyecto, setFiltroProyecto] = useState("");
   const [filtroPrioridad, setFiltroPrioridad] = useState("todas");
   const [filtroEstado, setFiltroEstado] = useState("todos");
-  const [vista, setVista] = useState<"lista" | "tarjetas">("tarjetas");
+  const [vista, setVista] = usePersistedState<"lista" | "tarjetas">("flowo:tareas-vista", "tarjetas");
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [proyectoId, setProyectoId] = useState("");
@@ -82,7 +86,7 @@ function Tareas() {
     setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
     const [{ data: tareasData }, { data: proyectosData }] = await Promise.all([
-      supabase.from("tareas").select("*").eq("user_id", user?.id).order("created_at", { ascending: false }),
+      supabase.from("tareas").select("*").eq("user_id", user?.id).order("orden", { ascending: true }).order("created_at", { ascending: false }),
       supabase.from("proyectos").select("id, nombre, folder_id, folder_url, cobro_por_tareas").eq("user_id", user?.id),
     ]);
     setProyectos(proyectosData || []);
@@ -100,6 +104,7 @@ function Tareas() {
       folder_url: td.folder_url || undefined,
       aprobada_cliente: td.aprobada_cliente || false,
       valor: td.valor || 0,
+      orden: td.orden ?? 0,
     }));
     setTareas(tareasMapeadas as TareaTab[]);
     setCargando(false);
@@ -185,6 +190,7 @@ function Tareas() {
       folder_id,
       folder_url,
       valor: proyectoSeleccionado?.cobro_por_tareas ? Number(nuevoValor) || 0 : 0,
+      orden: -1,
     });
 
     await actualizarContadores(proyectoId);
@@ -365,12 +371,37 @@ function Tareas() {
     onAgregarSubtarea: agregarSubtarea,
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
+    onReorderSubtareas: async (tareaId: string, subtareas: Subtarea[]) => {
+      setTareas((prev) => prev.map((ta) => ta.id === tareaId ? { ...ta, subtareas } : ta));
+      await supabase.from("tareas").update({ subtareas }).eq("id", tareaId);
+    },
   };
 
   function proyectoCobroPorTareas(proyectoId: string): boolean {
     const p = proyectos.find((pr) => pr.id === proyectoId);
     return !!p?.cobro_por_tareas;
   }
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  const handleDragEnd = useCallback(async (event: { active: { id: string | number }; over: { id: string | number } | null }) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = tareas.findIndex((ta) => ta.id === active.id);
+    const newIdx = tareas.findIndex((ta) => ta.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const oldProyecto = tareas[oldIdx].proyecto_id;
+    const newProyecto = tareas[newIdx].proyecto_id;
+    if (oldProyecto !== newProyecto) return;
+    const copia = [...tareas];
+    const [moved] = copia.splice(oldIdx, 1);
+    copia.splice(newIdx, 0, moved);
+    setTareas(copia);
+    await Promise.all(copia.map((ta, i) => supabase.from("tareas").update({ orden: i }).eq("id", ta.id)));
+  }, [tareas]);
 
   if (cargando) return <div className="p-8"><p className="text-muted text-sm">{t("tareas.cargando")}</p></div>;
 
@@ -612,6 +643,7 @@ function Tareas() {
         </div>
       )}
 
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="space-y-8">
         {grupos.map(({ proyecto, tareas: tareasGrupo }) => (
           <div key={proyecto.id}>
@@ -619,9 +651,11 @@ function Tareas() {
               <h3 className="text-primary text-sm font-semibold">{proyecto.nombre}</h3>
               <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasGrupo.length}</span>
             </div>
-            <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-              {tareasGrupo.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} cobroPorTareas={proyectoCobroPorTareas(tarea.proyecto_id)} {...propsComunes} />)}
-            </div>
+            <SortableContext items={tareasGrupo.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+              <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
+                {tareasGrupo.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} cobroPorTareas={proyectoCobroPorTareas(tarea.proyecto_id)} {...propsComunes} />)}
+              </div>
+            </SortableContext>
           </div>
         ))}
         {tareasSinProyecto.length > 0 && (
@@ -630,9 +664,11 @@ function Tareas() {
               <h3 className="text-primary text-sm font-semibold">{t("tareas.sinProyecto")}</h3>
               <span className="text-muted text-xs bg-gray/10 px-2 py-0.5 rounded-full">{tareasSinProyecto.length}</span>
             </div>
-            <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-              {tareasSinProyecto.map((tarea) => <TareaItem key={tarea.id} tarea={tarea} cobroPorTareas={false} {...propsComunes} />)}
-            </div>
+            <SortableContext items={tareasSinProyecto.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+              <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
+                {tareasSinProyecto.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} cobroPorTareas={false} {...propsComunes} />)}
+              </div>
+            </SortableContext>
           </div>
         )}
         {tareasFiltradas.length === 0 && (
@@ -643,6 +679,7 @@ function Tareas() {
           </div>
         )}
       </div>
+      </DndContext>
     </div>
   );
 }

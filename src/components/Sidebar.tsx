@@ -58,6 +58,7 @@ function Sidebar({ activePage, setActivePage, hayUpdate }: {
   const [nombre, setNombre] = useState("Freelancer");
   const [marcaNombre, setMarcaNombre] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [showTeams, setShowTeams] = useState(false);
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -110,6 +111,37 @@ function Sidebar({ activePage, setActivePage, hayUpdate }: {
           </button>
         ))}
       </nav>
+
+      <button onClick={() => setShowTeams(true)}
+        className="mx-1 mb-3 px-3 py-2.5 rounded-lg text-left hover:opacity-90 transition-opacity"
+        style={{ background: "linear-gradient(90deg, #79EFFF, #92D4FF, #AFB7FF, #C9A1FF, #FFABF8, #FFC0C0)" }}>
+        <p className="text-xs font-semibold" style={{ color: "#1A1F2E" }}>Próximamente</p>
+        <p className="text-xs font-bold mt-0.5" style={{ color: "#0D1117" }}>Flowo Teams</p>
+      </button>
+
+      {showTeams && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowTeams(false)}>
+          <div className="bg-canvas border border-edge rounded-2xl p-8 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                </svg>
+              </div>
+              <h3 className="text-primary font-semibold text-lg">Flowo Teams</h3>
+            </div>
+            <p className="text-muted2 text-sm leading-relaxed mb-6">
+              Flowo está creciendo y queremos que crezcas con nosotros. Estamos construyendo <span className="text-accent font-medium">Flowo Teams</span>, para que desde una empresa pequeña hasta una grande, puedas gestionar proyectos, tareas, clientes y facturas junto a tu equipo, todo en un solo lugar.
+            </p>
+            <p className="text-muted text-xs mb-5">Llega pronto. Mantente atento.</p>
+            <button onClick={() => setShowTeams(false)}
+              className="font-medium px-5 py-2 rounded-lg text-sm hover:opacity-90 w-full text-onaccent"
+              style={{ background: "linear-gradient(90deg, #79EFFF, #92D4FF, #AFB7FF, #C9A1FF, #FFABF8, #FFC0C0)" }}>
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
 
       <div
         onClick={() => setActivePage("perfil")}

@@ -1,10 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
-import TareaItem, { prioridadConfig, type Tarea, type Subtarea, type Nota } from "./TareaItem";
+import TareaItemSortable from "./TareaItemSortable";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { prioridadConfig, type Tarea, type Subtarea, type Nota } from "./TareaItem";
+import { usePersistedState } from "../hooks/usePersistedState";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
 
@@ -110,6 +114,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
   const [editNota, setEditNota] = useState("");
   const [hayDrive, setHayDrive] = useState(false);
   const [crearCarpetaTarea, setCrearCarpetaTarea] = useState(false);
+  const [colapsado, setColapsado] = usePersistedState<Record<string, boolean>>("flowo:secciones-" + proyecto.id, {});
   const [modalCarpeta, setModalCarpeta] = useState<{
     nombre: string;
     carpetaExistenteId: string;
@@ -183,7 +188,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
       { data: proyectoData },
       { data: clienteData },
     ] = await Promise.all([
-      supabase.from("tareas").select("*").eq("proyecto_id", proyecto.id).order("created_at", { ascending: true }),
+      supabase.from("tareas").select("*").eq("proyecto_id", proyecto.id).order("orden", { ascending: true }).order("created_at", { ascending: false }),
       supabase.from("registros_tiempo").select("*").eq("proyecto_id", proyecto.id).order("created_at", { ascending: false }),
       supabase.from("proyectos").select("notas, fecha_finalizacion").eq("id", proyecto.id).single(),
       supabase.from("clientes").select("telefono").eq("id", proyecto.cliente_id).single(),
@@ -204,6 +209,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
       subtareas: Array.isArray(tarea.subtareas) ? tarea.subtareas : [],
       aprobada_cliente: tarea.aprobada_cliente || false,
       valor: tarea.valor || 0,
+      orden: tarea.orden ?? 0,
     }));
 
     setTareas(tareasMapeadas);
@@ -343,6 +349,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
       folder_id,
       folder_url,
       valor: proyecto.cobro_por_tareas ? Number(nuevoValor) || 0 : 0,
+      orden: -1,
     }).select().single();
 
     if (data) {
@@ -354,7 +361,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
           }).eq("id", data.id);
         }
       }
-      const nuevasTareas = [...tareas, {
+      const nuevasTareas = [{
         id: data.id,
         titulo: data.nombre,
         completada: false,
@@ -369,7 +376,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
         subtareas: subtareasCreadas,
         aprobada_cliente: false,
         valor: Number(nuevoValor) || 0,
-      }];
+      }, ...tareas];
       setTareas(nuevasTareas);
       await supabase.from("proyectos").update({
         tareas_total: nuevasTareas.length,
@@ -493,6 +500,24 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     setTareas(tareas.map((ta) => ta.id === tareaId ? { ...ta, subtareas: nuevasSubtareas } : ta));
   }
 
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  const handleDragEnd = useCallback(async (event: { active: { id: string | number }; over: { id: string | number } | null }) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = tareas.findIndex((ta) => ta.id === active.id);
+    const newIdx = tareas.findIndex((ta) => ta.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const copia = [...tareas];
+    const [moved] = copia.splice(oldIdx, 1);
+    copia.splice(newIdx, 0, moved);
+    setTareas(copia);
+    await Promise.all(copia.map((ta, i) => supabase.from("tareas").update({ orden: i }).eq("id", ta.id)));
+  }, [tareas]);
+
   async function agregarNotaProyecto() {
     if (!nuevaNotaProyecto.trim()) return;
     const nota: Nota = { id: Date.now(), texto: nuevaNotaProyecto, fecha: new Date().toISOString().split("T")[0] };
@@ -567,6 +592,10 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
     cobroPorTareas: proyecto.cobro_por_tareas,
+    onReorderSubtareas: async (tareaId: string, subtareas: Subtarea[]) => {
+      setTareas((prev) => prev.map((ta) => ta.id === tareaId ? { ...ta, subtareas } : ta));
+      await supabase.from("tareas").update({ subtareas }).eq("id", tareaId);
+    },
   };
 
   return (
@@ -622,7 +651,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
               </button>
             )}
             {proyecto.cobro_por_tareas && (
-              <span className="text-xs px-2 py-1 rounded-full font-medium bg-violet/10 text-violet border border-violet/30">
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-accent/10 text-accent border border-accent/30">
                 {t("proyectos.cobroPorTareas")}
               </span>
             )}
@@ -768,7 +797,13 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
 
         <div className="bg-canvas border border-edge rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-primary font-medium">{t("detalleProyecto.tareas")}</h3>
+            <button onClick={() => setColapsado(c => ({ ...c, tareas: !c.tareas }))}
+              className="flex items-center gap-2 group cursor-pointer">
+              <svg className={"w-4 h-4 text-muted transition-transform " + (colapsado.tareas ? "" : "rotate-90")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              <h3 className="text-primary font-medium">{t("detalleProyecto.tareas")}</h3>
+            </button>
             <div className="flex items-center gap-3">
               {!finalizado && (
                 <button onClick={() => setMostrarFormTarea(!mostrarFormTarea)}
@@ -778,6 +813,8 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
               )}
             </div>
           </div>
+
+          {!colapsado.tareas && (<>
 
           {mostrarFormTarea && (
             <div className="bg-surface border border-edge rounded-lg p-3 mb-4">
@@ -888,19 +925,32 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
             </div>
           )}
 
-          <div className="space-y-3">
-            {tareas.map((tarea) => (
-              <TareaItem key={tarea.id} tarea={tarea} deshabilitado={finalizado} {...tareaItemProps} />
-            ))}
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={tareas.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {tareas.map((tarea) => (
+                  <TareaItemSortable key={tarea.id} tarea={tarea} deshabilitado={finalizado} {...tareaItemProps} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          </>)}
         </div>
 
         {/* Tiempo registrado — agrupado por tarea */}
         <div className="bg-canvas border border-edge rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-primary font-medium">{t("detalleProyecto.tiempoRegistrado")}</h3>
+            <button onClick={() => setColapsado(c => ({ ...c, tiempo: !c.tiempo }))}
+              className="flex items-center gap-2 cursor-pointer">
+              <svg className={"w-4 h-4 text-muted transition-transform " + (colapsado.tiempo ? "" : "rotate-90")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              <h3 className="text-primary font-medium">{t("detalleProyecto.tiempoRegistrado")}</h3>
+            </button>
             <span className="text-accent text-sm font-medium">{formatTiempo(totalSegundos)} {t("detalleProyecto.total")}</span>
           </div>
+          {!colapsado.tiempo && (
           <div className="space-y-2">
             {registrosMostrados.length === 0 && (
               <p className="text-muted text-sm">{t("detalleProyecto.sinRegistros")}</p>
@@ -915,6 +965,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
               </div>
             ))}
           </div>
+          )}
         </div>
 
       </div>
@@ -923,14 +974,23 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
 
       <div className="bg-canvas border border-edge rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-primary font-medium">Notas del proyecto</h3>
-          {!finalizado && (
+          <button onClick={() => setColapsado(c => ({ ...c, notas: !c.notas }))}
+            className="flex items-center gap-2 cursor-pointer">
+            <svg className={"w-4 h-4 text-muted transition-transform " + (colapsado.notas ? "" : "rotate-90")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <h3 className="text-primary font-medium">Notas del proyecto</h3>
+          </button>
+          {!finalizado && !colapsado.notas && (
             <button onClick={() => setMostrarFormNota(!mostrarFormNota)}
               className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10">
               + Nueva nota
             </button>
           )}
         </div>
+
+        {!colapsado.notas && (<>
+
 
         {mostrarFormNota && (
           <div className="mb-4">
@@ -982,14 +1042,22 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
             </div>
           ))}
         </div>
+
+        </>)}
       </div>
 
       <div className="bg-canvas border border-edge rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-primary font-medium">Actividad del cliente</h3>
-            <p className="text-muted text-xs mt-0.5">Mensajes, feedbacks y aprobaciones desde el portal</p>
-          </div>
+          <button onClick={() => setColapsado(c => ({ ...c, actividad: !c.actividad }))}
+            className="flex items-center gap-2 cursor-pointer">
+            <svg className={"w-4 h-4 text-muted transition-transform " + (colapsado.actividad ? "" : "rotate-90")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h3 className="text-primary font-medium">Actividad del cliente</h3>
+              <p className="text-muted text-xs mt-0.5">Mensajes, feedbacks y aprobaciones desde el portal</p>
+            </div>
+          </button>
           <div className="flex items-center gap-3">
             {tareasAprobadas > 0 && (
               <span className="text-accent text-xs bg-accent/10 px-2 py-1 rounded-lg">
@@ -1003,6 +1071,8 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
             )}
           </div>
         </div>
+
+        {!colapsado.actividad && (<>
 
         {mensajesPortal.length === 0 ? (
           <p className="text-muted text-sm">Sin actividad del cliente aún.</p>
@@ -1048,6 +1118,8 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
           </button>
         </div>
         <p className="text-muted text-xs mt-1">Enter para enviar · El cliente lo verá en su portal</p>
+
+        </>)}
       </div>
 
       </div>

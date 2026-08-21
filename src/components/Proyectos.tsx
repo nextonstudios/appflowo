@@ -3,6 +3,7 @@ import { useTranslation, Trans } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
 import Select from "./Select";
+import { usePersistedState } from "../hooks/usePersistedState";
 import DetalleProyecto from "./DetalleProyecto";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
 import { formatearMoneda } from "../lib/moneda";
@@ -67,7 +68,7 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
   const [cargando, setCargando] = useState(true);
   const [proyectoSeleccionado, setProyectoSeleccionado] = useState<Proyecto | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [vista, setVista] = useState<"lista" | "tarjetas">("tarjetas");
+  const [vista, setVista] = usePersistedState<"lista" | "tarjetas">("flowo:proyectos-vista", "tarjetas");
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [filtrosAbierto, setFiltrosAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");

@@ -541,6 +541,34 @@ function Timer({ activo }: { activo: boolean }) {
         </div>
       )}
 
+      {modo === "pomodoro" && (
+        <div className="bg-canvas border border-edge rounded-xl p-6 mb-4">
+          <div className="mb-4">
+            <h3 className="text-primary font-medium">¿En qué estás trabajando?</h3>
+            <p className="text-muted text-xs mt-1">
+              Solo es visual. El pomodoro no registra tiempo — usa el Timer libre para eso.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-muted text-xs mb-1 block">Proyecto</label>
+              <Select value={proyectoId} onChange={(v) => { setProyectoId(v); cargarTareasProyecto(v); }}
+                options={[
+                  { value: "", label: "Selecciona un proyecto" },
+                  ...proyectos.map((p) => ({ value: p.id, label: p.nombre })),
+                ]} />
+            </div>
+            <div>
+              <label className="text-muted text-xs mb-1 block">Tarea</label>
+              <Select value={tareaId} onChange={setTareaId}
+                disabled={!proyectoId}
+                placeholder={proyectoId ? "Selecciona una tarea" : "Primero elige un proyecto"}
+                options={tareasProyecto.map((t) => ({ value: t.id, label: t.nombre }))} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-canvas border border-edge rounded-xl p-8 mb-4">
 
         {modo === "pomodoro" && (
@@ -586,9 +614,27 @@ function Timer({ activo }: { activo: boolean }) {
           </div>
         )}
 
-        <div className={"text-center font-bold text-primary font-mono " + (modo === "pomodoro" ? "text-6xl mb-4" : "text-7xl mb-8")}>
-          {modo === "libre" ? formatTiempo(segundos) : formatTiempo(tiempoPomodoro)}
-        </div>
+        {modo === "libre" ? (
+          <div className="flex justify-center mb-8">
+            <div className="relative" style={{ width: 200, height: 200 }}>
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 200 200">
+                <circle cx="100" cy="100" r="90" fill="none" stroke="var(--color-edge)" strokeWidth="3" />
+                <circle cx="100" cy="100" r="90" fill="none" stroke="var(--color-accent)" strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 90}`}
+                  strokeDashoffset={`${2 * Math.PI * 90 * (1 - (segundos % 60) / 60)}`}
+                  className="transition-[stroke-dashoffset] duration-1000 ease-linear" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-5xl font-bold text-primary font-mono">{formatTiempo(segundos)}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={"text-center font-bold text-primary font-mono " + (modo === "pomodoro" ? "text-6xl mb-4" : "text-7xl mb-8")}>
+            {formatTiempo(tiempoPomodoro)}
+          </div>
+        )}
 
         {modo === "pomodoro" && (
           <div className="w-full max-w-xs mx-auto bg-surface rounded-full h-1.5 mb-6 overflow-hidden">

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buscarCarpeta, crearCarpeta } from "../lib/drive";
+import { usePersistedState } from "../hooks/usePersistedState";
 import { buscarCarpeta as buscarCarpetaDropbox, crearCarpeta as crearCarpetaDropbox } from "../lib/dropbox";
 import { buscarCarpeta as buscarCarpetaOneDrive, crearCarpeta as crearCarpetaOneDrive } from "../lib/onedrive";
 
@@ -42,7 +43,7 @@ function Clientes() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [vista, setVista] = useState<"lista" | "tarjetas">("lista");
+  const [vista, setVista] = usePersistedState<"lista" | "tarjetas">("flowo:clientes-vista", "lista");
   const [clientesAbiertos, setClientesAbiertos] = useState<string[]>([]);
   const [nombre, setNombre] = useState("");
   const [empresa, setEmpresa] = useState("");

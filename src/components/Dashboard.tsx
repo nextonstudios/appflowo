@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
+import { usePersistedState } from "../hooks/usePersistedState";
 
 interface Proyecto {
   id: string;
@@ -120,7 +121,7 @@ function Dashboard() {
   }
 
   const [filtro, setFiltro] = useState("mes");
-  const [vista, setVista] = useState<"lista" | "tarjetas">("lista");
+  const [vista, setVista] = usePersistedState<"lista" | "tarjetas">("flowo:dashboard-vista", "lista");
   const [cargando, setCargando] = useState(true);
   const primeraCarga = useRef(true);
   const [nombre, setNombre] = useState("Freelancer");

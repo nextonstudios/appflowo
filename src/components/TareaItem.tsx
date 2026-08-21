@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { DraggableAttributes } from "@dnd-kit/core";
+import type { DraggableSyntheticListeners } from "@dnd-kit/core";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import SubtareaSortable from "./SubtareaSortable";
 import Select from "./Select";
+import { usePersistedState } from "../hooks/usePersistedState";
 
 export interface Subtarea {
   id: number;
@@ -33,6 +39,7 @@ export interface Tarea {
   subtareas: Subtarea[];
   aprobada_cliente: boolean;
   valor?: number;
+  orden?: number;
 }
 
 export const prioridadConfig = {
@@ -101,7 +108,11 @@ interface Props {
   onAgregarSubtarea: (tareaId: string) => void;
   onToggleSubtarea: (tareaId: string, subtareaId: number) => void;
   onEliminarSubtarea: (tareaId: string, subtareaId: number) => void;
+  onReorderSubtareas?: (tareaId: string, subtareas: Subtarea[]) => void;
   cobroPorTareas?: boolean;
+  onReordenar?: (activeId: string, overId: string) => void;
+  dragListeners?: DraggableSyntheticListeners;
+  dragAttributes?: DraggableAttributes;
 }
 
 export default function TareaItem({
@@ -113,11 +124,11 @@ export default function TareaItem({
   setEditSubtareas, setEditSubtareaInput, setEditNota,
   setSubtareaAbiertaId, setNuevoTituloSubtarea, setNuevaSubtareaPublica,
   onToggleTarea, onCambiarEstado, onGuardarEdicion, onAbrirEdicion, onEliminarTarea,
-  onAgregarSubtarea, onToggleSubtarea, onEliminarSubtarea,
-  cobroPorTareas,
+  onAgregarSubtarea, onToggleSubtarea, onEliminarSubtarea, onReorderSubtareas,
+  cobroPorTareas, dragListeners, dragAttributes,
 }: Props) {
   const { t } = useTranslation();
-  const [plegada, setPlegada] = useState(false);
+  const [plegada, setPlegada] = usePersistedState("flowo:tarea-plegada-" + tarea.id, false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const diasRestantes = getDiasRestantes(tarea.deadline);
   const estaEditando = editandoTareaId === tarea.id;
@@ -127,6 +138,19 @@ export default function TareaItem({
     ? (diasRestantes === 0 ? t("tareaItem.venceHoy") : diasRestantes < 0 ? t("tareaItem.vencidaHace", { count: Math.abs(diasRestantes) }) : t("tareaItem.venceEn", { count: diasRestantes }))
     : "";
   const diasUrgentes = tarea.deadline && diasRestantes <= 3 && !tarea.completada;
+  const subSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 3 } }));
+
+  function handleSubtareaDragEnd(event: { active: { id: string | number }; over: { id: string | number } | null }) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !onReorderSubtareas) return;
+    const oldIdx = tarea.subtareas.findIndex((s) => s.id === active.id);
+    const newIdx = tarea.subtareas.findIndex((s) => s.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const copia = [...tarea.subtareas];
+    const [moved] = copia.splice(oldIdx, 1);
+    copia.splice(newIdx, 0, moved);
+    onReorderSubtareas(tarea.id, copia);
+  }
 
   function agregarEditSubtarea() {
     const titulo = editSubtareaInput.trim();
@@ -136,7 +160,7 @@ export default function TareaItem({
   }
 
   return (
-    <div className={"bg-canvas border border-edge rounded-xl p-3 " + (tarea.completada && !estaEditando ? "opacity-70" : "")}>
+    <div className={"bg-canvas border rounded-xl p-3 " + (tarea.prioridad === "alta" && !estaEditando ? "border-coral/40" : "border-edge") + " " + (tarea.completada && !estaEditando ? "opacity-70" : "")}>
       {estaEditando ? (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -271,7 +295,7 @@ export default function TareaItem({
                     <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-full font-medium">✓ {t("tareaItem.aprobada")}</span>
                   )}
                   {tarea.valor != null && tarea.valor > 0 && (
-                    <span className="text-violet text-xs bg-violet/10 px-2 py-0.5 rounded-full font-medium">{t("tareaItem.valor")}: ${tarea.valor}</span>
+                    <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-full font-medium">{t("tareaItem.valor")}: ${tarea.valor}</span>
                   )}
                   {tarea.folder_url && (
                     <button onClick={() => openUrl(tarea.folder_url!)} className="text-muted text-xs hover:text-accent">📁 {t("tareaItem.carpeta")}</button>
@@ -282,6 +306,15 @@ export default function TareaItem({
             <span className={"text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 " + prioridades[tarea.prioridad].color}>
               {prioridades[tarea.prioridad].label}
             </span>
+            {dragListeners && (
+              <button className="text-muted hover:text-primary flex-shrink-0 p-1 cursor-grab active:cursor-grabbing" {...dragListeners} {...dragAttributes}>
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
+                  <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                  <circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" />
+                </svg>
+              </button>
+            )}
             <button onClick={() => setPlegada(!plegada)} className="text-muted hover:text-primary flex-shrink-0 p-1 -mr-1">
               <svg className={"w-4 h-4 transition-transform " + (plegada ? "rotate-180" : "")}
                 fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -312,27 +345,17 @@ export default function TareaItem({
 
               <div className="mt-2 ml-7">
                 {tarea.subtareas.length > 0 && (
-                  <div className="space-y-1 mb-2">
-                    {tarea.subtareas.map((sub) => (
-                      <div key={sub.id} className="flex items-center gap-2 group">
-                        <button onClick={() => onToggleSubtarea(tarea.id, sub.id)} disabled={deshabilitado}
-                          className={"w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 border transition-colors " +
-                            (sub.completada
-                              ? "bg-accent border-accent text-onaccent"
-                              : "border-edge2 text-transparent hover:border-accent")}>
-                          <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </button>
-                        <p className={"text-xs flex-1 " + (sub.completada ? "line-through text-muted" : "text-muted2")}>{sub.titulo}</p>
-                        {sub.publica && <span className="text-accent text-xs">👁</span>}
-                        {!deshabilitado && (
-                          <button onClick={() => onEliminarSubtarea(tarea.id, sub.id)}
-                            className="text-muted text-xs hover:text-coral opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
-                        )}
+                  <DndContext sensors={subSensors} collisionDetection={closestCenter} onDragEnd={handleSubtareaDragEnd}>
+                    <SortableContext items={tarea.subtareas.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-1 mb-2">
+                        {tarea.subtareas.map((sub) => (
+                          <SubtareaSortable key={sub.id} sub={sub} deshabilitado={deshabilitado}
+                            onToggle={() => onToggleSubtarea(tarea.id, sub.id)}
+                            onEliminar={() => onEliminarSubtarea(tarea.id, sub.id)} />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
 
                 {!deshabilitado && (
