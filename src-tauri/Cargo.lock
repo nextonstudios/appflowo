@@ -1046,7 +1046,7 @@ dependencies = [
 
 [[package]]
 name = "flowo"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.4.1"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8be7462df143984c4598a256ef469b251d7d7f9e271135073e78fc535414f3d0"
 dependencies = [
