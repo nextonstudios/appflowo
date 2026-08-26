@@ -39,6 +39,7 @@ interface Props {
   onToggleSubtarea: (tareaId: string, subtareaId: number) => void;
   onEliminarSubtarea: (tareaId: string, subtareaId: number) => void;
   cobroPorTareas?: boolean;
+  onTogglePagada?: (id: string) => void;
 }
 
 export default function TareaItemSortable({ tarea, ...rest }: Props) {

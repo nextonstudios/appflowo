@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { supabase } from "../lib/supabase";
 import Select from "./Select";
 import { sendNotification } from "@tauri-apps/plugin-notification";
+import { useTranslation } from "react-i18next";
 
 interface Registro {
   id: string;
@@ -97,7 +98,11 @@ function formatFecha(fecha: string) {
   return d + "/" + m + "/" + y;
 }
 
-function Timer({ activo }: { activo: boolean }) {
+function Timer({ activo, equipoId }: { activo: boolean; equipoId?: string | null }) {
+  const { t } = useTranslation();
+  const enEquipo = !!equipoId;
+  const INTERVALO_MUESTREO = 30;
+  const TIMEOUT_ALERTA = 5 * 60;
   const [corriendo, setCorriendo] = useState(false);
   const [segundos, setSegundos] = useState(0);
   const [corriendoPomodoro, setCorriendoPomodoro] = useState(false);
@@ -125,6 +130,9 @@ function Timer({ activo }: { activo: boolean }) {
   const [manualFecha, setManualFecha] = useState(new Date().toISOString().split("T")[0]);
   const [frase, setFrase] = useState(getFrase("trabajo", false, 0));
   const [fadeIn, setFadeIn] = useState(true);
+  const [scoreSesion, setScoreSesion] = useState<number | null>(null);
+  const [alertaActividad, setAlertaActividad] = useState(false);
+  const [alertaRestante, setAlertaRestante] = useState(0);
 
   const faseRef = useRef(fasePomodoro);
   const corriendoRef = useRef(corriendo);
@@ -136,21 +144,36 @@ function Timer({ activo }: { activo: boolean }) {
   const avanzarFaseRef = useRef<() => void>(() => {});
   const fraseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Anti-fraude (solo modo equipo)
+  const userIdRef = useRef<string | null>(null);
+  const eventosRef = useRef({ mouse: 0, keyboard: 0, scroll: 0, clicks: 0 });
+  const ultimoInputRef = useRef(0);
+  const ultimoMouseRef = useRef(0);
+  const activosSegundosRef = useRef(0);
+  const muestreoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inactivasSeguidasRef = useRef(0);
+  const alertaInicioRef = useRef<number | null>(null);
+  const alertasSesionRef = useRef(0);
+  const pausadaFraudeRef = useRef(false);
+
   useEffect(() => { faseRef.current = fasePomodoro; }, [fasePomodoro]);
   useEffect(() => { corriendoRef.current = corriendo; }, [corriendo]);
   useEffect(() => { ciclosRef.current = ciclosPomodoro; }, [ciclosPomodoro]);
   useEffect(() => { avanzarFaseRef.current = avanzarFase; });
 
-  useEffect(() => { cargarDatos(); }, []);
+  useEffect(() => { void cargarDatos(); }, [equipoId]);
 
   useEffect(() => {
     if (!activo) return;
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("proyectos").select("id, nombre").eq("user_id", user.id)
-        .then(({ data }) => { if (data) setProyectos(data); });
+      userIdRef.current = user.id;
+      let q = supabase.from("proyectos").select("id, nombre");
+      if (enEquipo) q = q.eq("equipo_id", equipoId);
+      else q = q.eq("user_id", user.id);
+      q.then(({ data }) => { if (data) setProyectos(data); });
     });
-  }, [activo]);
+  }, [activo, equipoId]);
 
   useEffect(() => {
     if (modo !== "pomodoro") return;
@@ -178,10 +201,14 @@ function Timer({ activo }: { activo: boolean }) {
   async function cargarDatos() {
     setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const [{ data: proyectosData }, { data: registrosData }] = await Promise.all([
-      supabase.from("proyectos").select("id, nombre").eq("user_id", user?.id),
-      supabase.from("registros_tiempo").select("*").eq("user_id", user?.id).order("created_at", { ascending: false }),
-    ]);
+    userIdRef.current = user?.id || null;
+    let rq = supabase.from("registros_tiempo").select("*").eq("user_id", user?.id ?? "");
+    if (enEquipo) rq = rq.eq("equipo_id", equipoId!);
+    else rq = rq.is("equipo_id", null);
+    let qp = supabase.from("proyectos").select("id, nombre");
+    if (enEquipo) qp = qp.eq("equipo_id", equipoId!);
+    else qp = qp.eq("user_id", user?.id ?? "");
+    const [{ data: proyectosData }, { data: registrosData }] = await Promise.all([qp, rq.order("created_at", { ascending: false })]);
     const proyectosLista = proyectosData || [];
     setProyectos(proyectosLista);
     const proyectosMap = Object.fromEntries(proyectosLista.map((p: ProyectoOpcion) => [p.id, p.nombre]));
@@ -224,14 +251,100 @@ function Timer({ activo }: { activo: boolean }) {
       if (inicioLibreRef.current !== null) {
         const elapsed = Math.floor((Date.now() - inicioLibreRef.current) / 1000);
         setSegundos(segundosAcumuladosRef.current + elapsed);
+        if (enEquipo && Date.now() - ultimoInputRef.current < 2000) {
+          activosSegundosRef.current += 0.5;
+        }
       }
     }, 500);
     return () => clearInterval(intervalo);
-  }, [corriendo]);
+  }, [corriendo, enEquipo]);
+
+  // ── Anti-fraude: muestreo de actividad cada 30s (solo modo equipo) ──
+  useEffect(() => {
+    if (!corriendo || !enEquipo || modo !== "libre") return;
+
+    const onMove = () => {
+      const ahora = Date.now();
+      if (ahora - ultimoMouseRef.current > 400) { eventosRef.current.mouse++; ultimoMouseRef.current = ahora; }
+      ultimoInputRef.current = ahora;
+    };
+    const onDown = () => { eventosRef.current.clicks++; ultimoInputRef.current = Date.now(); };
+    const onKey = () => { eventosRef.current.keyboard++; ultimoInputRef.current = Date.now(); };
+    const onWheel = () => { eventosRef.current.scroll++; ultimoInputRef.current = Date.now(); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: true });
+
+    muestreoRef.current = setInterval(async () => {
+      const ev = eventosRef.current;
+      eventosRef.current = { mouse: 0, keyboard: 0, scroll: 0, clicks: 0 };
+      const score = Math.min(100,
+        Math.min(ev.keyboard, 40) * 2 +
+        Math.min(ev.clicks, 10) * 6 +
+        Math.min(ev.scroll, 10) * 3 +
+        Math.round(Math.min(ev.mouse, 30) / 3));
+      const activoAhora = score >= 10;
+      if (activoAhora) activosSegundosRef.current += INTERVALO_MUESTREO;
+
+      const totalActual = segundosAcumuladosRef.current +
+        (inicioLibreRef.current !== null ? Math.floor((Date.now() - inicioLibreRef.current) / 1000) : 0);
+      setScoreSesion(totalActual > 0 ? Math.round((activosSegundosRef.current / totalActual) * 100) : null);
+
+      if (userIdRef.current && equipoId) {
+        await supabase.from("registros_actividad").insert({
+          equipo_id: equipoId,
+          user_id: userIdRef.current,
+          mouse_events: ev.mouse,
+          keyboard_events: ev.keyboard,
+          scroll_events: ev.scroll,
+          clicks: ev.clicks,
+          intervalo_segundos: INTERVALO_MUESTREO,
+          activity_score: score,
+          is_active: activoAhora,
+        });
+      }
+
+      if (!activoAhora) {
+        inactivasSeguidasRef.current++;
+        if (inactivasSeguidasRef.current >= 2 && alertaInicioRef.current === null) {
+          alertaInicioRef.current = Date.now();
+          alertasSesionRef.current++;
+          setAlertaRestante(TIMEOUT_ALERTA);
+          setAlertaActividad(true);
+        }
+      } else {
+        inactivasSeguidasRef.current = 0;
+      }
+    }, INTERVALO_MUESTREO * 1000);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
+      if (muestreoRef.current) clearInterval(muestreoRef.current);
+      muestreoRef.current = null;
+    };
+  }, [corriendo, enEquipo, modo]);
+
+  // Cuenta atrás de la alerta "¿Sigues trabajando?" → auto-pausa
+  useEffect(() => {
+    if (!alertaActividad) return;
+    if (alertaRestante <= 0) { void autoPausar(); return; }
+    const tid = setTimeout(() => setAlertaRestante((r) => r - 1), 1000);
+    return () => clearTimeout(tid);
+  }, [alertaActividad, alertaRestante]);
+
+  function reproducirSonido(archivo: string) {
+    const audio = new Audio(`/sounds/${archivo}`);
+    audio.play().catch(() => {});
+  }
 
   function avanzarFase() {
     inicioPomodoroRef.current = Date.now();
     if (faseRef.current === "trabajo") {
+      reproducirSonido("trabajo-finalizado.mp3");
       const nuevosCiclos = ciclosRef.current + 1;
       ciclosRef.current = nuevosCiclos;
       setCiclosPomodoro(nuevosCiclos);
@@ -249,6 +362,7 @@ function Timer({ activo }: { activo: boolean }) {
         sendNotification({ title: "Tiempo de descanso", body: "Buen trabajo. Descansa un momento antes del siguiente ciclo." });
       }
     } else {
+      reproducirSonido("descanso-finalizado.mp3");
       const t = getTiempoTrabajo();
       restanteRef.current = t;
       setTiempoPomodoro(t);
@@ -276,11 +390,65 @@ function Timer({ activo }: { activo: boolean }) {
     if (!corriendo) {
       inicioLibreRef.current = Date.now();
       segundosAcumuladosRef.current = segundos;
+      ultimoInputRef.current = Date.now();
     } else {
       segundosAcumuladosRef.current = segundos;
       inicioLibreRef.current = null;
     }
     setCorriendo(!corriendo);
+  }
+
+  function pausarSesion() {
+    setCorriendo(false);
+    segundosAcumuladosRef.current = segundos;
+    inicioLibreRef.current = null;
+  }
+
+  async function autoPausar() {
+    if (alertaInicioRef.current === null && !alertaActividad) return;
+    setAlertaActividad(false);
+    alertaInicioRef.current = null;
+    inactivasSeguidasRef.current = 0;
+    pausadaFraudeRef.current = true;
+    if (userIdRef.current && equipoId) {
+      await supabase.from("alertas_actividad").insert({
+        equipo_id: equipoId,
+        user_id: userIdRef.current,
+        timeout_minutos: TIMEOUT_ALERTA / 60,
+        pausada_automaticamente: true,
+      });
+    }
+    sendNotification({ title: "Timer pausado", body: "No detectamos actividad y no respondiste a la verificación." });
+    pausarSesion();
+  }
+
+  async function responderAlerta(sigueTrabajando: boolean) {
+    const enviadaEn = alertaInicioRef.current ? new Date(alertaInicioRef.current).toISOString() : undefined;
+    setAlertaActividad(false);
+    alertaInicioRef.current = null;
+    inactivasSeguidasRef.current = 0;
+    if (userIdRef.current && equipoId) {
+      await supabase.from("alertas_actividad").insert({
+        equipo_id: equipoId,
+        user_id: userIdRef.current,
+        enviada_en: enviadaEn,
+        respondida_en: new Date().toISOString(),
+        respuesta: sigueTrabajando ? "si" : "no",
+        timeout_minutos: TIMEOUT_ALERTA / 60,
+      });
+    }
+    if (!sigueTrabajando) pausarSesion();
+  }
+
+  function resetearTracking() {
+    eventosRef.current = { mouse: 0, keyboard: 0, scroll: 0, clicks: 0 };
+    activosSegundosRef.current = 0;
+    inactivasSeguidasRef.current = 0;
+    alertasSesionRef.current = 0;
+    pausadaFraudeRef.current = false;
+    alertaInicioRef.current = null;
+    setAlertaActividad(false);
+    setScoreSesion(null);
   }
 
   function duracionFaseActual() {
@@ -352,20 +520,39 @@ function Timer({ activo }: { activo: boolean }) {
     if (!proyectoId || !tareaId || segundos === 0) return;
     const { data: { user } } = await supabase.auth.getUser();
     const tareaNombre = tareasProyecto.find((t) => t.id === tareaId)?.nombre || "";
+    const duracionSesion = segundos;
+
+    const metricas = enEquipo ? {
+      horas_reales: activosSegundosRef.current,
+      activity_score: duracionSesion > 0 ? Math.round((activosSegundosRef.current / duracionSesion) * 100) : null,
+      alertas_enviadas: alertasSesionRef.current,
+      pausado_por_fraude: pausadaFraudeRef.current,
+    } : {};
 
     // Buscar por tarea_id — único e inmutable, no falla por fecha ni descripción
     const { data: existente } = await supabase
       .from("registros_tiempo")
-      .select("id, duracion")
+      .select("id, duracion, horas_reales, activity_score, alertas_enviadas")
       .eq("user_id", user?.id)
       .eq("tarea_id", tareaId)
       .maybeSingle();
 
     if (existente) {
-      const nuevaDuracion = existente.duracion + segundos;
+      const nuevaDuracion = existente.duracion + duracionSesion;
+      const prevScore = existente.activity_score ?? 0;
+      const nuevoScore = metricas.activity_score ?? 0;
+      const scoreCombinado = (prevScore || nuevoScore)
+        ? Math.round(((prevScore * existente.duracion) + (nuevoScore * duracionSesion)) / nuevaDuracion)
+        : null;
       await supabase
         .from("registros_tiempo")
-        .update({ duracion: nuevaDuracion })
+        .update({
+          duracion: nuevaDuracion,
+          horas_reales: (existente.horas_reales ?? 0) + (metricas.horas_reales ?? 0),
+          activity_score: scoreCombinado,
+          alertas_enviadas: (existente.alertas_enviadas ?? 0) + (metricas.alertas_enviadas ?? 0),
+          pausado_por_fraude: pausadaFraudeRef.current || false,
+        })
         .eq("id", existente.id);
 
       setRegistros(prev => prev.map((r) =>
@@ -380,9 +567,11 @@ function Timer({ activo }: { activo: boolean }) {
           proyecto_id: proyectoId,
           tarea_id: tareaId,
           descripcion: tareaNombre,
-          duracion: segundos,
+          duracion: duracionSesion,
           fecha: hoyStr,
           manual: false,
+          ...(enEquipo ? { equipo_id: equipoId } : {}),
+          ...metricas,
         })
         .select()
         .single();
@@ -395,7 +584,7 @@ function Timer({ activo }: { activo: boolean }) {
           proyecto: proyectoNombre,
           proyecto_id: proyectoId,
           tarea_id: tareaId,
-          duracion: segundos,
+          duracion: duracionSesion,
           fecha: inserted.fecha,
           manual: false,
         }, ...prev]);
@@ -405,6 +594,7 @@ function Timer({ activo }: { activo: boolean }) {
     setSegundos(0);
     segundosAcumuladosRef.current = 0;
     inicioLibreRef.current = null;
+    resetearTracking();
     setProyectoId("");
     setTareaId("");
     setTareasProyecto([]);
@@ -422,6 +612,7 @@ function Timer({ activo }: { activo: boolean }) {
       duracion,
       fecha: manualFecha,
       manual: true,
+      ...(enEquipo ? { equipo_id: equipoId } : {}),
     }).select().single();
     if (data) {
       const proyectoNombre = proyectos.find((p) => p.id === manualProyectoId)?.nombre || "Sin proyecto";
@@ -661,7 +852,7 @@ function Timer({ activo }: { activo: boolean }) {
                 </button>
               )}
               {segundos > 0 && (
-                <button onClick={() => { setSegundos(0); setCorriendo(false); segundosAcumuladosRef.current = 0; inicioLibreRef.current = null; }}
+                <button onClick={() => { setSegundos(0); setCorriendo(false); segundosAcumuladosRef.current = 0; inicioLibreRef.current = null; resetearTracking(); }}
                   className="px-4 py-3 rounded-lg text-sm text-muted hover:text-primary">
                   Resetear
                 </button>
@@ -692,6 +883,19 @@ function Timer({ activo }: { activo: boolean }) {
             <p className="text-muted text-xs text-center">
               <span className="text-primary font-medium">¿Cómo funciona?</span> — Bloques de trabajo concentrado con pausas programadas. Para registrar tiempo en un proyecto usa el <span className="text-accent">Timer libre</span>.
             </p>
+          </div>
+        )}
+
+        {enEquipo && (
+          <div className="mt-5 flex items-center justify-center gap-2 text-xs">
+            <span className={"w-1.5 h-1.5 rounded-full " + (corriendo ? "bg-accent animate-pulse" : "bg-gray")} />
+            <span className="text-muted">{t("timer.registroActividad")}</span>
+            {scoreSesion !== null && (
+              <span className={"font-medium px-2 py-0.5 rounded-full " +
+                (scoreSesion >= 70 ? "text-accent bg-accent/10" : scoreSesion >= 40 ? "text-violet bg-violet/10" : "text-coral bg-coral/10")}>
+                {scoreSesion}%
+              </span>
+            )}
           </div>
         )}
 
@@ -856,6 +1060,29 @@ function Timer({ activo }: { activo: boolean }) {
           </div>
         )}
       </div>
+
+      {alertaActividad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-canvas border border-edge rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-primary font-semibold text-lg mb-1">{t("timer.alertaTitulo")}</h3>
+            <p className="text-muted text-sm mb-4">{t("timer.alertaDesc")}</p>
+            <div className="w-full bg-surface rounded-full h-1.5 mb-5 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-coral transition-all duration-1000 ease-linear"
+                style={{ width: Math.max(0, (alertaRestante / TIMEOUT_ALERTA) * 100) + "%" }} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => void responderAlerta(true)}
+                className="flex-1 bg-accent text-onaccent font-medium px-4 py-2.5 rounded-lg text-sm hover:opacity-90">
+                {t("timer.alertaSi")}
+              </button>
+              <button onClick={() => void responderAlerta(false)}
+                className="flex-1 bg-surface border border-edge text-muted px-4 py-2.5 rounded-lg text-sm hover:text-primary">
+                {t("timer.alertaNo")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

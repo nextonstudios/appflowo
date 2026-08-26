@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
-export const NOVEDADES_VERSION = "1.4.1";
+export const NOVEDADES_VERSION = "1.4.2";
 
 export function debeMostrarNovedades(tutorialCompletado: boolean): boolean {
   if (!tutorialCompletado) return false;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
@@ -11,6 +11,7 @@ import { prioridadConfig, type Tarea, type Subtarea, type Nota } from "./TareaIt
 import { usePersistedState } from "../hooks/usePersistedState";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
+import { miembrosDeEquipo, type MiembroEquipo } from "../lib/equipo";
 
 interface Registro {
   id: string;
@@ -36,6 +37,9 @@ interface Proyecto {
   folder_id?: string;
   folder_url?: string;
   cobro_por_tareas?: boolean;
+  es_privado?: boolean;
+  feedback_visible?: boolean;
+  created_by?: string;
 }
 
 interface MensajePortal {
@@ -52,6 +56,8 @@ interface Props {
   onVolver: () => void;
   onGenerarFactura?: (proyectoId: string) => void;
   onEditar?: (proyecto: Proyecto) => void;
+  equipoId?: string | null;
+  miRolEquipo?: string | null;
 }
 
 function getEstadoConfig(t: TFunction): Record<string, { label: string; color: string }> {
@@ -75,11 +81,13 @@ function formatFecha(iso: string, locale: string) {
     " " + fecha.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
-function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Props) {
+function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar, equipoId, miRolEquipo }: Props) {
   const { t, i18n } = useTranslation();
   const estadoConfig = getEstadoConfig(t);
   const localeFechas = i18n.language === "en" ? "en-US" : "es-ES";
   const moneda = useMoneda();
+  const modoEquipo = !!equipoId;
+  const esViewer = miRolEquipo === "viewer";
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [notas, setNotas] = useState<Nota[]>([]);
@@ -123,11 +131,35 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
   const [mensajesPortal, setMensajesPortal] = useState<MensajePortal[]>([]);
   const [respuesta, setRespuesta] = useState("");
   const [enviandoRespuesta, setEnviandoRespuesta] = useState(false);
+  const [miembros, setMiembros] = useState<MiembroEquipo[]>([]);
+  const [asignaciones, setAsignaciones] = useState<{ tarea_id: string; user_id: string }[]>([]);
+  const [nuevosAsignados, setNuevosAsignados] = useState<string[]>([]);
+  const [miUserId, setMiUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (modoEquipo) {
+      supabase.auth.getUser().then(({ data }) => setMiUserId(data.user?.id || null));
+    }
+  }, [modoEquipo]);
+
+  // Tareas con asignados resueltos (nombre) para render
+  const tareasConAsignados = useMemo(() => {
+    if (!modoEquipo) return tareas;
+    return tareas.map((tarea) => ({
+      ...tarea,
+      asignaciones: asignaciones
+        .filter((a) => a.tarea_id === tarea.id)
+        .map((a) => ({ user_id: a.user_id, nombre: miembros.find((m) => m.user_id === a.user_id)?.nombre || "?" })),
+    }));
+  }, [tareas, asignaciones, miembros, modoEquipo]);
 
   useEffect(() => {
     cargarDatos();
     cargarMensajesPortal();
     tieneDriveConectado().then(setHayDrive);
+    if (equipoId) {
+      miembrosDeEquipo(equipoId).then(setMiembros);
+    }
 
     // Realtime — mensajes del portal
     const canal = supabase
@@ -209,6 +241,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
       subtareas: Array.isArray(tarea.subtareas) ? tarea.subtareas : [],
       aprobada_cliente: tarea.aprobada_cliente || false,
       valor: tarea.valor || 0,
+      pagada: tarea.pagada || false,
       orden: tarea.orden ?? 0,
     }));
 
@@ -222,6 +255,16 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     setNotas(Array.isArray(proyectoData?.notas) ? proyectoData.notas : []);
     if (proyectoData?.fecha_finalizacion) setFechaFinalizacion(proyectoData.fecha_finalizacion);
     setClienteWhatsapp(clienteData?.telefono || "");
+
+    if (equipoId && tareasMapeadas.length > 0) {
+      const { data: asigData } = await supabase
+        .from("tarea_asignaciones")
+        .select("tarea_id, user_id")
+        .in("tarea_id", tareasMapeadas.map((tarea) => tarea.id));
+      setAsignaciones(asigData || []);
+    } else {
+      setAsignaciones([]);
+    }
   }
 
   async function cargarMensajesPortal() {
@@ -268,11 +311,13 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     ? tareas.reduce((acc, t) => acc + (t.valor || 0), 0)
     : (proyecto.servicios?.reduce((acc, s) => acc + s.precio, 0) || 0);
   const totalTareasValor = tareas.reduce((acc, t) => acc + (t.valor || 0), 0);
-  const totalTareasCompletadasValor = tareas.filter(t => t.completada).reduce((acc, t) => acc + (t.valor || 0), 0);
+  const totalTareasPagadasValor = tareas.filter(t => t.pagada).reduce((acc, t) => acc + (t.valor || 0), 0);
+  const totalTareasPorCobrarValor = tareas.filter(t => t.completada && !t.pagada).reduce((acc, t) => acc + (t.valor || 0), 0);
   const modo = proyecto.servicios?.[0]?.modo || "fijo";
   const proyectoTieneCarpeta = !!proyecto.folder_id;
   const feedbacks = mensajesPortal.filter(m => m.tipo === "feedback");
   const tareasAprobadas = tareas.filter((tarea) => tarea.aprobada_cliente).length;
+  const mostrarActividad = !modoEquipo || proyecto.feedback_visible !== false || miRolEquipo === "admin";
 
   function preguntarCarpetaExistente(nombre: string, carpetaExistenteId: string): Promise<"usar" | "nueva"> {
     return new Promise((resolve) => {
@@ -285,6 +330,26 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     const tarea = tareas.find((tareaItem) => tareaItem.id === id);
     if (!tarea) return;
     await cambiarEstado(id, tarea.completada ? "pendiente" : "completada");
+  }
+
+  async function togglePagada(id: string) {
+    const tarea = tareas.find((t) => t.id === id);
+    if (!tarea) return;
+    const nuevoValor = !tarea.pagada;
+    await supabase.from("tareas").update({ pagada: nuevoValor }).eq("id", id);
+    setTareas(tareas.map((t) => t.id === id ? { ...t, pagada: nuevoValor } : t));
+  }
+
+  async function toggleAsignado(tareaId: string, userId: string) {
+    if (!modoEquipo || esViewer) return;
+    const existente = asignaciones.find((a) => a.tarea_id === tareaId && a.user_id === userId);
+    if (existente) {
+      setAsignaciones(asignaciones.filter((a) => a !== existente));
+      await supabase.from("tarea_asignaciones").delete().eq("tarea_id", tareaId).eq("user_id", userId);
+    } else {
+      setAsignaciones([...asignaciones, { tarea_id: tareaId, user_id: userId }]);
+      await supabase.from("tarea_asignaciones").insert({ tarea_id: tareaId, user_id: userId });
+    }
   }
 
   async function cambiarEstado(id: string, nuevoEstado: "pendiente" | "en-progreso" | "completada") {
@@ -353,6 +418,12 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     }).select().single();
 
     if (data) {
+      if (modoEquipo && nuevosAsignados.length > 0) {
+        const filas = nuevosAsignados.map((userId) => ({ tarea_id: data.id, user_id: userId }));
+        await supabase.from("tarea_asignaciones").insert(filas);
+        setAsignaciones((prev) => [...prev, ...filas]);
+        setNuevosAsignados([]);
+      }
       if (notaTarea) {
         const { error: errNota } = await supabase.from("tareas").update({ nota: notaTarea }).eq("id", data.id);
         if (errNota) {
@@ -376,6 +447,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
         subtareas: subtareasCreadas,
         aprobada_cliente: false,
         valor: Number(nuevoValor) || 0,
+        pagada: false,
       }, ...tareas];
       setTareas(nuevasTareas);
       await supabase.from("proyectos").update({
@@ -585,6 +657,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
     setNuevaSubtareaPublica,
     onToggleTarea: toggleTarea,
     onCambiarEstado: cambiarEstado,
+    onTogglePagada: togglePagada,
     onGuardarEdicion: guardarEdicion,
     onAbrirEdicion: abrirEdicion,
     onEliminarTarea: eliminarTarea,
@@ -596,6 +669,9 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
       setTareas((prev) => prev.map((ta) => ta.id === tareaId ? { ...ta, subtareas } : ta));
       await supabase.from("tareas").update({ subtareas }).eq("id", tareaId);
     },
+    modoEquipo,
+    miembros: miembros.map((m) => ({ userId: m.user_id, nombre: m.nombre })),
+    onToggleAsignado: toggleAsignado,
   };
 
   return (
@@ -655,6 +731,11 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
                 {t("proyectos.cobroPorTareas")}
               </span>
             )}
+            {modoEquipo && proyecto.es_privado && (
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-violet/10 text-violet border border-violet/30">
+                🔒 {t("equipos.privado")}
+              </span>
+            )}
           </div>
           <p className="text-muted text-sm">
             {proyecto.cliente_nombre}
@@ -674,13 +755,13 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
             className="bg-surface border border-edge text-primary font-medium px-3 py-2 rounded-lg text-sm hover:border-violet/40">
             {t("detalleProyecto.agendarReunion")}
           </button>
-          {!finalizado && (
+          {!finalizado && (!modoEquipo || miRolEquipo === "admin" || proyecto.created_by === miUserId) && (
             <button onClick={() => setConfirmandoEliminar(true)}
               className="border border-coral/30 text-coral font-medium px-3 py-2 rounded-lg text-sm hover:bg-coral/10">
               {t("detalleProyecto.eliminar")}
             </button>
           )}
-          {onEditar && (
+          {onEditar && (!modoEquipo || !esViewer) && (
             <button onClick={() => onEditar(proyecto)}
               className="bg-surface border border-edge text-primary font-medium px-3 py-2 rounded-lg text-sm hover:border-accent/40">
               {t("detalleProyecto.editar")}
@@ -704,7 +785,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className={"grid grid-cols-1 gap-4 mb-6 " + (proyecto.cobro_por_tareas ? "md:grid-cols-4" : "md:grid-cols-3")}>
         <div className="bg-canvas border border-edge rounded-xl p-5">
           <p className="text-muted text-xs mb-1">{proyecto.cobro_por_tareas ? t("detalleProyecto.presupuestoTareas") : (modo === "fijo" ? t("detalleProyecto.presupuestoTotal") : t("detalleProyecto.tarifaPorHora"))}</p>
           <p className="text-2xl font-bold text-primary">{formatearMoneda(presupuesto, moneda)}{!proyecto.cobro_por_tareas && modo === "horas" ? "/hr" : ""}</p>
@@ -715,26 +796,37 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
         <div className="bg-canvas border border-edge rounded-xl p-5">
           <p className="text-muted text-xs mb-1">{t("detalleProyecto.horasTrabajadas")}</p>
           <p className="text-2xl font-bold text-primary">{formatTiempo(totalSegundos)}</p>
-          {proyecto.cobro_por_tareas && (
-            <p className="text-muted text-xs mt-1">{t("detalleProyecto.totalTareasValor", { total: completadas, valor: formatearMoneda(totalTareasCompletadasValor, moneda) })}</p>
-          )}
         </div>
-        <div className="bg-canvas border border-edge rounded-xl p-5">
-  <p className="text-muted text-xs mb-1">{proyecto.cobro_por_tareas ? t("detalleProyecto.totalTareasValor", { total: completadas, valor: "" }).split(":")[0] : (modo === "fijo" ? t("detalleProyecto.tarifaRealImplicita") : t("detalleProyecto.totalAcumulado"))}</p>
-  <p className="text-2xl font-bold text-accent">
-    {proyecto.cobro_por_tareas
-      ? formatearMoneda(totalTareasCompletadasValor, moneda)
-      : modo === "fijo"
-        ? totalHoras >= 1
-          ? formatearMoneda(Math.round(presupuesto / totalHoras), moneda) + "/hr"
-          : "—"
-        : formatearMoneda(Math.round(totalHoras * presupuesto), moneda)
-    }
-  </p>
-  {!proyecto.cobro_por_tareas && modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
-    <p className="text-muted text-xs mt-1">{t("detalleProyecto.disponible1h")}</p>
-  )}
-</div>
+        {proyecto.cobro_por_tareas && (
+          <div className="bg-canvas border border-edge rounded-xl p-5">
+            <p className="text-muted text-xs mb-1">{t("detalleProyecto.porCobrar")}</p>
+            <p className="text-2xl font-bold text-white">{formatearMoneda(totalTareasPorCobrarValor, moneda)}</p>
+            <p className="text-muted text-xs mt-1">{t("detalleProyecto.tareasPorCobrar", { count: tareas.filter(t => t.completada && !t.pagada).length })}</p>
+          </div>
+        )}
+        {proyecto.cobro_por_tareas && (
+          <div className="bg-canvas border border-edge rounded-xl p-5">
+            <p className="text-muted text-xs mb-1">{t("detalleProyecto.cobrado")}</p>
+            <p className="text-2xl font-bold text-accent">{formatearMoneda(totalTareasPagadasValor, moneda)}</p>
+            <p className="text-muted text-xs mt-1">{t("detalleProyecto.tareasPagadas", { count: tareas.filter(t => t.pagada).length })}</p>
+          </div>
+        )}
+        {!proyecto.cobro_por_tareas && (
+          <div className="bg-canvas border border-edge rounded-xl p-5">
+            <p className="text-muted text-xs mb-1">{modo === "fijo" ? t("detalleProyecto.tarifaRealImplicita") : t("detalleProyecto.totalAcumulado")}</p>
+            <p className="text-2xl font-bold text-accent">
+              {modo === "fijo"
+                ? totalHoras >= 1
+                  ? formatearMoneda(Math.round(presupuesto / totalHoras), moneda) + "/hr"
+                  : "—"
+                : formatearMoneda(Math.round(totalHoras * presupuesto), moneda)
+              }
+            </p>
+            {modo === "fijo" && totalHoras < 1 && totalSegundos > 0 && (
+              <p className="text-muted text-xs mt-1">{t("detalleProyecto.disponible1h")}</p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-canvas border border-edge rounded-xl p-5 mb-6">
@@ -805,7 +897,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
               <h3 className="text-primary font-medium">{t("detalleProyecto.tareas")}</h3>
             </button>
             <div className="flex items-center gap-3">
-              {!finalizado && (
+              {!finalizado && !esViewer && (
                 <button onClick={() => setMostrarFormTarea(!mostrarFormTarea)}
                   className="text-accent text-xs border border-accent/30 px-3 py-1.5 rounded-lg hover:bg-accent/10">
                   {t("detalleProyecto.nueva")}
@@ -849,6 +941,33 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
                   {nuevaPublica ? t("detalleProyecto.visibleCliente") : t("detalleProyecto.ocultaCliente")}
                 </button>
               </div>
+
+              {modoEquipo && miembros.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-muted text-xs mb-2">{t("equipos.asignadosLabel")}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {miembros.map((m) => {
+                      const activo = nuevosAsignados.includes(m.user_id);
+                      return (
+                        <button key={m.user_id} type="button"
+                          onClick={() => setNuevosAsignados((prev) =>
+                            prev.includes(m.user_id) ? prev.filter((u) => u !== m.user_id) : [...prev, m.user_id]
+                          )}
+                          className={"flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors " +
+                            (activo
+                              ? "bg-accent/10 border-accent/40 text-accent font-medium"
+                              : "bg-canvas border-edge text-muted hover:text-primary")}>
+                          <span className={"w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold flex-shrink-0 " +
+                            (activo ? "bg-accent text-onaccent" : "bg-gray text-muted2")}>
+                            {m.nombre.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="max-w-[120px] truncate">{m.nombre}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {hayDrive && (
                 proyectoTieneCarpeta ? (
@@ -926,10 +1045,10 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
           )}
 
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={tareas.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={tareasConAsignados.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-3">
-                {tareas.map((tarea) => (
-                  <TareaItemSortable key={tarea.id} tarea={tarea} deshabilitado={finalizado} {...tareaItemProps} />
+                {tareasConAsignados.map((tarea) => (
+                  <TareaItemSortable key={tarea.id} tarea={tarea} deshabilitado={finalizado || esViewer} {...tareaItemProps} />
                 ))}
               </div>
             </SortableContext>
@@ -1046,6 +1165,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
         </>)}
       </div>
 
+      {mostrarActividad && (
       <div className="bg-canvas border border-edge rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => setColapsado(c => ({ ...c, actividad: !c.actividad }))}
@@ -1121,6 +1241,7 @@ function DetalleProyecto({ proyecto, onVolver, onGenerarFactura, onEditar }: Pro
 
         </>)}
       </div>
+      )}
 
       </div>
 

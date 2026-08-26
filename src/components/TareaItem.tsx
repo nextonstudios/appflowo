@@ -9,12 +9,23 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import SubtareaSortable from "./SubtareaSortable";
 import Select from "./Select";
 import { usePersistedState } from "../hooks/usePersistedState";
+import { colorAvatarUsuario, inicialesUsuario } from "../lib/equipo";
 
 export interface Subtarea {
   id: number;
   titulo: string;
   completada: boolean;
   publica: boolean;
+}
+
+export interface Asignado {
+  user_id: string;
+  nombre: string;
+}
+
+export interface MiembroParaAsignar {
+  userId: string;
+  nombre: string;
 }
 
 export interface Nota {
@@ -39,7 +50,9 @@ export interface Tarea {
   subtareas: Subtarea[];
   aprobada_cliente: boolean;
   valor?: number;
+  pagada?: boolean;
   orden?: number;
+  asignaciones?: Asignado[];
 }
 
 export const prioridadConfig = {
@@ -110,9 +123,13 @@ interface Props {
   onEliminarSubtarea: (tareaId: string, subtareaId: number) => void;
   onReorderSubtareas?: (tareaId: string, subtareas: Subtarea[]) => void;
   cobroPorTareas?: boolean;
+  onTogglePagada?: (id: string) => void;
   onReordenar?: (activeId: string, overId: string) => void;
   dragListeners?: DraggableSyntheticListeners;
   dragAttributes?: DraggableAttributes;
+  modoEquipo?: boolean;
+  miembros?: MiembroParaAsignar[];
+  onToggleAsignado?: (tareaId: string, userId: string) => void;
 }
 
 export default function TareaItem({
@@ -125,11 +142,14 @@ export default function TareaItem({
   setSubtareaAbiertaId, setNuevoTituloSubtarea, setNuevaSubtareaPublica,
   onToggleTarea, onCambiarEstado, onGuardarEdicion, onAbrirEdicion, onEliminarTarea,
   onAgregarSubtarea, onToggleSubtarea, onEliminarSubtarea, onReorderSubtareas,
-  cobroPorTareas, dragListeners, dragAttributes,
+  cobroPorTareas, onTogglePagada, dragListeners, dragAttributes,
+  modoEquipo, miembros, onToggleAsignado,
 }: Props) {
   const { t } = useTranslation();
   const [plegada, setPlegada] = usePersistedState("flowo:tarea-plegada-" + tarea.id, false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+  const [confirmandoDespagar, setConfirmandoDespagar] = useState(false);
+  const tareaPagada = !!tarea.pagada;
   const diasRestantes = getDiasRestantes(tarea.deadline);
   const estaEditando = editandoTareaId === tarea.id;
   const prioridades = getPrioridadConfig(t);
@@ -160,7 +180,7 @@ export default function TareaItem({
   }
 
   return (
-    <div className={"bg-canvas border rounded-xl p-3 " + (tarea.prioridad === "alta" && !estaEditando ? "border-coral/40" : "border-edge") + " " + (tarea.completada && !estaEditando ? "opacity-70" : "")}>
+    <div className={"bg-canvas border rounded-xl p-3 " + (tareaPagada ? "border-accent/40" : tarea.prioridad === "alta" && !estaEditando ? "border-coral/40" : "border-edge") + " " + (tarea.completada && !estaEditando ? "opacity-70" : "")}>
       {estaEditando ? (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -212,6 +232,30 @@ export default function TareaItem({
               </label>
             )}
           </div>
+          {modoEquipo && miembros && miembros.length > 0 && (
+            <div>
+              <p className="text-muted text-xs mb-2">{t("equipos.asignadosLabel")}</p>
+              <div className="flex flex-wrap gap-2">
+                {miembros.map((m) => {
+                  const activo = (tarea.asignaciones || []).some((a) => a.user_id === m.userId);
+                  return (
+                    <button key={m.userId} type="button" disabled={!onToggleAsignado}
+                      onClick={() => onToggleAsignado && onToggleAsignado(tarea.id, m.userId)}
+                      className={"flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border text-xs transition-colors " +
+                        (activo
+                          ? "bg-accent/10 border-accent/40 text-accent font-medium"
+                          : "bg-surface border-edge text-muted hover:text-primary")}>
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
+                        style={{ background: colorAvatarUsuario(m.userId) }}>
+                        {inicialesUsuario(m.nombre)}
+                      </span>
+                      <span className="max-w-[120px] truncate">{m.nombre}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div>
             <p className="text-muted text-xs mb-2">{t("tareaItem.subtareas")}</p>
             <div className="space-y-1 mb-2">
@@ -269,7 +313,7 @@ export default function TareaItem({
       ) : (
         <>
           <div className="flex items-center gap-3">
-            <button onClick={() => onToggleTarea(tarea.id)} disabled={deshabilitado}
+            <button onClick={() => onToggleTarea(tarea.id)} disabled={deshabilitado || tareaPagada}
               className={"w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors " +
                 (tarea.completada
                   ? "bg-accent border-accent text-onaccent"
@@ -303,6 +347,27 @@ export default function TareaItem({
                 </div>
               )}
             </div>
+            {(tarea.asignaciones?.length ?? 0) > 0 && (
+              <div className="flex -space-x-1.5 flex-shrink-0" title={tarea.asignaciones!.map((a) => a.nombre).join(", ")}>
+                {tarea.asignaciones!.slice(0, 3).map((a) => (
+                  <span key={a.user_id}
+                    className="w-5 h-5 rounded-full border border-canvas flex items-center justify-center text-[8px] font-semibold text-white"
+                    style={{ background: colorAvatarUsuario(a.user_id) }}>
+                    {inicialesUsuario(a.nombre)}
+                  </span>
+                ))}
+                {tarea.asignaciones!.length > 3 && (
+                  <span className="w-5 h-5 rounded-full border border-canvas bg-surface text-muted text-[8px] font-semibold flex items-center justify-center">
+                    +{tarea.asignaciones!.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+            {tareaPagada && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 text-onaccent bg-accent">
+                {t("tareaItem.pagada")}
+              </span>
+            )}
             <span className={"text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 " + prioridades[tarea.prioridad].color}>
               {prioridades[tarea.prioridad].label}
             </span>
@@ -326,7 +391,7 @@ export default function TareaItem({
           {!plegada && (
             <>
               <div className="mt-3 ml-7 flex flex-wrap items-center gap-3">
-                <Select value={tarea.estado} disabled={deshabilitado}
+                <Select value={tarea.estado} disabled={deshabilitado || tareaPagada}
                   onChange={(v) => onCambiarEstado(tarea.id, v as "pendiente" | "en-progreso" | "completada")}
                   triggerClassName={"text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none flex items-center gap-1.5 " +
                     (estadoConfig[tarea.estado].color.split(" ").find((c) => c.startsWith("bg-")) || "bg-gray/10")}
@@ -340,6 +405,15 @@ export default function TareaItem({
                   <span className={"text-xs " + (diasUrgentes ? "text-coral font-medium" : "text-muted")}>
                     {etiquetaDias}
                   </span>
+                )}
+                {cobroPorTareas && tarea.completada && !tareaPagada && (tarea.valor ?? 0) > 0 && onTogglePagada && (
+                  <button onClick={() => onTogglePagada(tarea.id)}
+                    className="text-xs px-2.5 py-1 rounded-full font-medium bg-accent/10 text-accent border border-accent/30 hover:bg-accent/20 flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {t("tareaItem.marcarPagada")}
+                  </button>
                 )}
               </div>
 
@@ -405,7 +479,7 @@ export default function TareaItem({
                 </div>
               )}
 
-              {!deshabilitado && !confirmandoEliminar && (
+              {!deshabilitado && !confirmandoEliminar && !tareaPagada && (
                 <div className="mt-3 border-t border-edge pt-2.5 flex items-center gap-4">
                   <button onClick={() => onAbrirEdicion(tarea)}
                     className="text-muted text-xs hover:text-accent flex items-center gap-1.5">
@@ -427,6 +501,35 @@ export default function TareaItem({
                       <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                     </svg>
                     {t("tareaItem.eliminar")}
+                  </button>
+                </div>
+              )}
+
+              {!deshabilitado && tareaPagada && !confirmandoDespagar && (
+                <div className="mt-3 border-t border-edge pt-2.5 flex items-center gap-4">
+                  <span className="text-accent text-xs font-medium flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {t("tareaItem.marcaPagada")}
+                  </span>
+                  <button onClick={() => setConfirmandoDespagar(true)}
+                    className="text-muted text-xs hover:text-coral flex items-center gap-1.5 ml-auto">
+                    {t("tareaItem.despagar")}
+                  </button>
+                </div>
+              )}
+
+              {!deshabilitado && tareaPagada && confirmandoDespagar && (
+                <div className="mt-3 border-t border-edge pt-2.5 flex items-center gap-3">
+                  <p className="text-muted text-xs">{t("tareaItem.confirmarDespagar")}</p>
+                  <button onClick={() => { onTogglePagada && onTogglePagada(tarea.id); setConfirmandoDespagar(false); }}
+                    className="bg-coral text-white font-medium px-3 py-1 rounded-lg text-xs hover:opacity-90">
+                    {t("tareaItem.confirmar")}
+                  </button>
+                  <button onClick={() => setConfirmandoDespagar(false)}
+                    className="text-muted px-3 py-1 rounded-lg text-xs hover:text-primary">
+                    {t("tareaItem.cancelar")}
                   </button>
                 </div>
               )}

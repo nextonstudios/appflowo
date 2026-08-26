@@ -15,8 +15,12 @@ import Perfil from "./components/Perfil";
 import Tutorial from "./components/Tutorial";
 import Novedades, { debeMostrarNovedades, marcarNovedadesVista } from "./components/Novedades";
 import ModalCrearCliente from "./components/ModalCrearCliente";
+import FlowoTeams from "./components/FlowoTeams";
+import Equipo from "./components/Equipo";
+import ModalUnirseEquipo from "./components/ModalUnirseEquipo";
 import { useNotificaciones } from "./hooks/useNotificaciones";
 import { useUpdater } from "./hooks/useUpdater";
+import { useEquipo } from "./hooks/useEquipo";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import type { ContratoClienteInfo } from "./lib/clientesContrato";
 import { contratoRequiereCrearCliente } from "./lib/clientesContrato";
@@ -68,6 +72,23 @@ function App() {
 
   useNotificaciones(userId, onContratoFirmado);
   const { estado: estadoUpdate, verificar, reiniciar, descargar } = useUpdater();
+  const estadoEquipo = useEquipo();
+
+  const [equipoAbiertoId, setEquipoAbiertoId] = useState<string | null>(null);
+  const [tokenInvitacion, setTokenInvitacion] = useState<string | null>(null);
+
+  function abrirEquipo(id: string) {
+    estadoEquipo.seleccionar(id);
+    setEquipoAbiertoId(id);
+    setActivePage("equipo");
+  }
+
+  async function salirDelModoEquipo(destino: string) {
+    estadoEquipo.seleccionar(null);
+    setEquipoAbiertoId(null);
+    await estadoEquipo.recargar();
+    setActivePage(destino);
+  }
 
   useEffect(() => {
     const tema = localStorage.getItem("flowo_tema") || "oscuro";
@@ -100,6 +121,14 @@ function App() {
     const unlistenPromise = onOpenUrl((urls) => {
       const url = urls[0];
       if (!url) return;
+
+      // Invitación a equipo: flowo://invite?token=xxx
+      if (url.includes("invite") && url.includes("token=")) {
+        const params = new URLSearchParams(url.split("?")[1] || "");
+        const token = params.get("token");
+        if (token) setTokenInvitacion(token);
+        return;
+      }
 
       if (url.includes("oauth/dropbox")) {
         const parts = url.split("?");
@@ -210,19 +239,60 @@ function App() {
         activePage={activePage}
         setActivePage={navegar}
         hayUpdate={estadoUpdate.disponible}
+        invitacionesPendientes={estadoEquipo.invitaciones.length}
+        enEquipo={!!equipoAbiertoId}
+        equipoNombre={estadoEquipo.equipos.find((e) => e.id === equipoAbiertoId)?.nombre ?? null}
+        miRol={estadoEquipo.miRol}
+        onSalirAlPersonal={() => { void salirDelModoEquipo("dashboard"); }}
       />
       <main className="flex-1 flex flex-col ml-56">
         <div className="flex-1">
           {activePage === "dashboard" && <Dashboard />}
-          {activePage === "clientes" && <Clientes />}
           {activePage === "cotizaciones" && <Cotizaciones onIrAFacturas={() => setActivePage("facturas")} />}
           {activePage === "contratos" && <Contratos />}
-          {activePage === "proyectos" && <Proyectos onGenerarFactura={(id) => { setProyectoFacturaId(id); setActivePage("facturas"); }} />}
-          {activePage === "tareas" && <Tareas />}
+          {activePage === "clientes" && <Clientes equipoId={equipoAbiertoId} miRolEquipo={estadoEquipo.miRol} />}
+          {activePage === "proyectos" && <Proyectos onGenerarFactura={(id) => { setProyectoFacturaId(id); setActivePage("facturas"); }} equipoId={equipoAbiertoId} miRolEquipo={estadoEquipo.miRol} />}
+          {activePage === "tareas" && <Tareas equipoId={equipoAbiertoId} miRolEquipo={estadoEquipo.miRol} />}
           <div className={activePage === "timer" ? "block" : "hidden"}>
-            <Timer activo={activePage === "timer"} />
+            <Timer activo={activePage === "timer"} equipoId={equipoAbiertoId} />
           </div>
           {activePage === "facturas" && <Facturas proyectoPreseleccionado={proyectoFacturaId} onLimpiarProyecto={() => setProyectoFacturaId(null)} />}
+          {activePage === "flowo-teams" && (
+            <FlowoTeams
+              estadoEquipo={estadoEquipo}
+              onAbrirEquipo={abrirEquipo}
+            />
+          )}
+          {activePage === "equipo" && (() => {
+            const equipoActual = estadoEquipo.equipos.find((e) => e.id === equipoAbiertoId);
+            if (!equipoActual) return <FlowoTeams estadoEquipo={estadoEquipo} onAbrirEquipo={abrirEquipo} />;
+            return (
+              <Equipo
+                key={equipoActual.id}
+                equipo={equipoActual}
+                miRol={estadoEquipo.miRol}
+                userId={estadoEquipo.userId}
+                tabInicial="miembros"
+                onVolver={() => { void salirDelModoEquipo("flowo-teams"); }}
+                onSalio={() => { void salirDelModoEquipo("flowo-teams"); }}
+              />
+            );
+          })()}
+          {activePage === "equipo-ajustes" && (() => {
+            const equipoActual = estadoEquipo.equipos.find((e) => e.id === equipoAbiertoId);
+            if (!equipoActual) return <FlowoTeams estadoEquipo={estadoEquipo} onAbrirEquipo={abrirEquipo} />;
+            return (
+              <Equipo
+                key={equipoActual.id + "-ajustes"}
+                equipo={equipoActual}
+                miRol={estadoEquipo.miRol}
+                userId={estadoEquipo.userId}
+                tabInicial="ajustes"
+                onVolver={() => { void salirDelModoEquipo("flowo-teams"); }}
+                onSalio={() => { void salirDelModoEquipo("flowo-teams"); }}
+              />
+            );
+          })()}
           {activePage === "perfil" && (
             <Perfil
               onLogout={() => setLogueado(false)}
@@ -251,6 +321,18 @@ function App() {
           contrato={contratoDetectado}
           onConfirmado={() => setContratoDetectado(null)}
           onCancelar={() => setContratoDetectado(null)}
+        />
+      )}
+
+      {tokenInvitacion && (
+        <ModalUnirseEquipo
+          token={tokenInvitacion}
+          onAceptado={async (equipoId) => {
+            setTokenInvitacion(null);
+            await estadoEquipo.recargar();
+            abrirEquipo(equipoId);
+          }}
+          onCerrar={() => setTokenInvitacion(null)}
         />
       )}
 

@@ -928,7 +928,41 @@ if (cargando) {
         icono={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
         </svg>}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* General */}
+          <div className="bg-surface border border-edge rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="w-6 h-6 rounded-md bg-canvas border border-edge flex items-center justify-center text-accent">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0 0a9 9 0 003.5-7V5.5M12 21a9 9 0 01-3.5-7V5.5M12 3a9 9 0 019 9h-18a9 9 0 019-9z" />
+                </svg>
+              </div>
+              <h4 className="text-primary text-sm font-medium">{t("perfil.general")}</h4>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.moneda")}</label>
+                <Select value={moneda} onChange={(v) => { setMoneda(v); localStorage.setItem("flowo_moneda", v); }}
+                  options={[
+                    { value: "USD", label: t("perfil.monedas.USD") },
+                    { value: "COP", label: t("perfil.monedas.COP") },
+                    { value: "EUR", label: t("perfil.monedas.EUR") },
+                    { value: "MXN", label: t("perfil.monedas.MXN") },
+                  ]} />
+                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.descMoneda")}</p>
+              </div>
+              <div>
+                <label className="text-muted text-xs mb-1 block">{t("perfil.idioma")}</label>
+                <Select
+                  value={idioma}
+                  onChange={(v) => { cambiarIdioma(v); setIdioma(v); }}
+                  options={IDIOMAS}
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Apariencia */}
           <div className="bg-surface border border-edge rounded-xl p-5">
@@ -1010,40 +1044,6 @@ if (cargando) {
               ))}
             </div>
             <p className="text-muted text-xs opacity-70 mt-2">{t("perfil.descTipografia")}</p>
-          </div>
-
-          {/* General */}
-          <div className="bg-surface border border-edge rounded-xl p-5 lg:col-span-2">
-            <div className="flex items-center gap-2 mb-5">
-              <div className="w-6 h-6 rounded-md bg-canvas border border-edge flex items-center justify-center text-accent">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0 0a9 9 0 003.5-7V5.5M12 21a9 9 0 01-3.5-7V5.5M12 3a9 9 0 019 9h-18a9 9 0 019-9z" />
-                </svg>
-              </div>
-              <h4 className="text-primary text-sm font-medium">{t("perfil.general")}</h4>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-muted text-xs mb-1 block">{t("perfil.moneda")}</label>
-                <Select value={moneda} onChange={(v) => { setMoneda(v); localStorage.setItem("flowo_moneda", v); }}
-                  options={[
-                    { value: "USD", label: t("perfil.monedas.USD") },
-                    { value: "COP", label: t("perfil.monedas.COP") },
-                    { value: "EUR", label: t("perfil.monedas.EUR") },
-                    { value: "MXN", label: t("perfil.monedas.MXN") },
-                  ]} />
-                <p className="text-muted text-xs opacity-70 mt-1">{t("perfil.descMoneda")}</p>
-              </div>
-              <div>
-                <label className="text-muted text-xs mb-1 block">{t("perfil.idioma")}</label>
-                <Select
-                  value={idioma}
-                  onChange={(v) => { cambiarIdioma(v); setIdioma(v); }}
-                  options={IDIOMAS}
-                />
-              </div>
-            </div>
           </div>
 
         </div>

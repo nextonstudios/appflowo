@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
@@ -8,6 +8,9 @@ import DetalleProyecto from "./DetalleProyecto";
 import { buscarCarpeta, crearCarpeta, tieneDriveConectado } from "../lib/drive";
 import { formatearMoneda } from "../lib/moneda";
 import { useMoneda } from "../hooks/useMoneda";
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface ServicioProyecto {
   nombre: string;
@@ -29,6 +32,10 @@ interface Proyecto {
   folder_id?: string;
   folder_url?: string;
   cobro_por_tareas?: boolean;
+  es_privado?: boolean;
+  feedback_visible?: boolean;
+  created_by?: string;
+  orden?: number;
 }
 
 interface ClienteOpcion {
@@ -57,12 +64,39 @@ function getDiasRestantes(deadline: string) {
 
 interface ProyectosProps {
   onGenerarFactura: (id: string) => void;
+  equipoId?: string | null;
+  miRolEquipo?: string | null;
 }
 
-function Proyectos({ onGenerarFactura }: ProyectosProps) {
+function ProyectoSortable({ children, id }: { children: React.ReactNode; id: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+    zIndex: isDragging ? 50 : undefined,
+    position: "relative" as const,
+  };
+  return (
+    <div ref={setNodeRef} style={style} data-proyecto-sortable={id}>
+      {children}
+      <button className="absolute top-2 right-12 text-muted hover:text-primary p-1 rounded-lg hover:bg-surface transition-colors cursor-grab active:cursor-grabbing z-10" {...attributes} {...listeners}>
+        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+          <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
+          <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+          <circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function Proyectos({ onGenerarFactura, equipoId, miRolEquipo }: ProyectosProps) {
   const moneda = useMoneda();
   const { t } = useTranslation();
   const estadoConfig = getEstadoConfig(t);
+  const modoEquipo = !!equipoId;
+  const esViewer = miRolEquipo === "viewer";
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [clientes, setClientes] = useState<ClienteOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -87,6 +121,25 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [menuAbiertoId, setMenuAbiertoId] = useState<string | null>(null);
   const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<string | null>(null);
+  const [esPrivado, setEsPrivado] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(true);
+  const [miUserId, setMiUserId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+  useEffect(() => {
+    if (modoEquipo) {
+      supabase.auth.getUser().then(({ data }) => setMiUserId(data.user?.id || null));
+    }
+  }, [modoEquipo]);
+
+  function puedeEliminar(p: Proyecto): boolean {
+    if (!modoEquipo) return true;
+    return miRolEquipo === "admin" || p.created_by === miUserId;
+  }
 
   // Drive
   const [hayDrive, setHayDrive] = useState(false);
@@ -118,8 +171,12 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
     const { data: { user } } = await supabase.auth.getUser();
 
     const [{ data: proyectosData }, { data: clientesData }, { data: perfilData }] = await Promise.all([
-      supabase.from("proyectos").select("*").eq("user_id", user?.id).order("created_at", { ascending: false }),
-      supabase.from("clientes").select("id, nombre, folder_id, folder_url").eq("user_id", user?.id),
+      modoEquipo
+        ? supabase.from("proyectos").select("*").eq("equipo_id", equipoId).order("orden", { ascending: true }).order("created_at", { ascending: false })
+        : supabase.from("proyectos").select("*").eq("user_id", user?.id).order("orden", { ascending: true }).order("created_at", { ascending: false }),
+      modoEquipo
+        ? supabase.from("clientes").select("id, nombre, folder_id, folder_url").eq("equipo_id", equipoId)
+        : supabase.from("clientes").select("id, nombre, folder_id, folder_url").eq("user_id", user?.id),
       supabase.from("perfiles").select("servicios").eq("user_id", user?.id).single(),
     ]);
 
@@ -129,18 +186,35 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
     const proyectosMapeados = (proyectosData || []).map((p: any) => ({
       ...p,
-      cliente_nombre: clientesMap[p.cliente_id] || t("proyectos.clienteDesconocido"),
+      cliente_nombre: p.cliente_id ? (clientesMap[p.cliente_id] || t("proyectos.clienteDesconocido")) : t("equipos.sinCliente"),
       servicios: Array.isArray(p.servicios) ? p.servicios : [],
       tareas: p.tareas_total || 0,
       tareas_completadas: p.tareas_completadas || 0,
       fecha_inicio: p.fecha_inicio || "",
       cobro_por_tareas: p.cobro_por_tareas || false,
+      es_privado: p.es_privado || false,
+      feedback_visible: p.feedback_visible !== false,
+      created_by: p.created_by || undefined,
+      orden: p.orden ?? 0,
     }));
 
     setProyectos(proyectosMapeados);
     setCargando(false);
     setCatalogo(Array.isArray(perfilData?.servicios) ? perfilData.servicios : []);
   }
+
+  const handleDragEnd = useCallback(async (event: { active: { id: string | number }; over: { id: string | number } | null }) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = proyectos.findIndex((p) => p.id === active.id);
+    const newIdx = proyectos.findIndex((p) => p.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const copia = [...proyectos];
+    const [moved] = copia.splice(oldIdx, 1);
+    copia.splice(newIdx, 0, moved);
+    setProyectos(copia);
+    await Promise.all(copia.map((p, i) => supabase.from("proyectos").update({ orden: i }).eq("id", p.id)));
+  }, [proyectos]);
 
   const clienteSeleccionado = clientes.find((c) => c.id === clienteId);
   const clienteTieneCarpeta = !!clienteSeleccionado?.folder_id;
@@ -190,10 +264,13 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
     setNotaInicial("");
     setCobroPorTareas(false);
     setEditandoId(null);
+    setEsPrivado(false);
+    setFeedbackVisible(true);
   }
 
   async function agregarProyecto() {
-    if (!nombre || !clienteId || (!cobroPorTareas && serviciosSeleccionados.length === 0)) return;
+    const requiereCliente = !modoEquipo;
+    if (!nombre || (requiereCliente && !clienteId) || (!cobroPorTareas && serviciosSeleccionados.length === 0)) return;
     setGuardando(true);
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -228,13 +305,17 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
 
     if (editandoId) {
       const payload: Record<string, unknown> = {
-        cliente_id: clienteId,
+        cliente_id: clienteId || null,
         nombre,
         servicios: serviciosSeleccionados,
         fecha_inicio: fechaInicio || null,
         deadline: deadline || null,
         cobro_por_tareas: cobroPorTareas,
       };
+      if (modoEquipo) {
+        payload.es_privado = esPrivado;
+        payload.feedback_visible = feedbackVisible;
+      }
       if (folder_id) { payload.folder_id = folder_id; payload.folder_url = folder_url; }
       if (notas.length > 0) payload.notas = notas;
 
@@ -245,9 +326,9 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
         cargarDatos();
       }
     } else {
-      const payload = {
+      const payload: Record<string, unknown> = {
         user_id: user?.id,
-        cliente_id: clienteId,
+        cliente_id: clienteId || null,
         nombre,
         servicios: serviciosSeleccionados,
         fecha_inicio: fechaInicio || null,
@@ -260,6 +341,12 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
         notas,
         cobro_por_tareas: cobroPorTareas,
       };
+      if (modoEquipo) {
+        payload.equipo_id = equipoId;
+        payload.created_by = user?.id;
+        payload.es_privado = esPrivado;
+        payload.feedback_visible = feedbackVisible;
+      }
 
       const { error } = await supabase.from("proyectos").insert(payload);
       setGuardando(false);
@@ -273,12 +360,14 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
   function abrirEdicion(proyecto: Proyecto) {
     setEditandoId(proyecto.id);
     setNombre(proyecto.nombre);
-    setClienteId(proyecto.cliente_id);
+    setClienteId(proyecto.cliente_id || "");
     setFechaInicio(proyecto.fecha_inicio || "");
     setDeadline(proyecto.deadline || "");
     setServiciosSeleccionados([...proyecto.servicios]);
     setCobroPorTareas(proyecto.cobro_por_tareas || false);
     setNotaInicial("");
+    setEsPrivado(!!proyecto.es_privado);
+    setFeedbackVisible(proyecto.feedback_visible !== false);
     setMostrarForm(true);
     setMenuAbiertoId(null);
   }
@@ -313,6 +402,8 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
         onVolver={() => setProyectoSeleccionado(null)}
         onGenerarFactura={onGenerarFactura}
         onEditar={(p) => { setProyectoSeleccionado(null); abrirEdicion(p as any); }}
+        equipoId={equipoId}
+        miRolEquipo={miRolEquipo}
       />
     );
   }
@@ -378,16 +469,18 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
           <p className="text-sm font-medium text-muted mt-1">{t("proyectos.totalProyectos", { count: proyectos.length })}</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => (mostrarForm ? cerrarForm() : setMostrarForm(true))}
-            disabled={guardando}
-            className={"px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 " +
-              (mostrarForm
-                ? "bg-surface border border-edge text-primary hover:border-coral/40"
-                : "bg-accent text-onaccent hover:opacity-90")}
-          >
-            {guardando ? t("proyectos.creandoProyecto") : mostrarForm ? t("proyectos.cancelar") : "+ " + t("proyectos.nuevoProyecto")}
-          </button>
+          {!esViewer && (
+            <button
+              onClick={() => (mostrarForm ? cerrarForm() : setMostrarForm(true))}
+              disabled={guardando}
+              className={"px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 " +
+                (mostrarForm
+                  ? "bg-surface border border-edge text-primary hover:border-coral/40"
+                  : "bg-accent text-onaccent hover:opacity-90")}
+            >
+              {guardando ? t("proyectos.creandoProyecto") : mostrarForm ? t("proyectos.cancelar") : "+ " + t("proyectos.nuevoProyecto")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -451,10 +544,10 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 className="w-full bg-surface border border-edge rounded-lg px-3 py-2 text-primary text-sm focus:outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="text-muted text-xs mb-1 block">{t("proyectos.cliente")} *</label>
+              <label className="text-muted text-xs mb-1 block">{t("proyectos.cliente")}{!modoEquipo ? " *" : ""}</label>
               <Select value={clienteId} onChange={setClienteId}
                 options={[
-                  { value: "", label: t("proyectos.seleccionaCliente") },
+                  { value: "", label: modoEquipo ? t("equipos.sinCliente") : t("proyectos.seleccionaCliente") },
                   ...clientes.map((c) => ({ value: c.id, label: c.nombre + (c.folder_id ? " 📁" : "") })),
                 ]} />
             </div>
@@ -494,6 +587,58 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
               </div>
             </button>
           </div>
+
+          {/* Visibilidad dentro del equipo */}
+          {modoEquipo && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setEsPrivado(!esPrivado)}
+                className={"flex items-center gap-3 text-left rounded-xl border p-3.5 transition-all " +
+                  (esPrivado
+                    ? "bg-violet/10 border-violet/50"
+                    : "bg-surface border-edge hover:border-violet/40")}
+              >
+                <span className={"w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors " +
+                  (esPrivado ? "bg-violet border-violet" : "border-edge2")}>
+                  {esPrivado && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
+                <div>
+                  <p className={"text-sm font-medium " + (esPrivado ? "text-violet" : "text-primary")}>
+                    🔒 {t("equipos.proyectoPrivado")}
+                  </p>
+                  <p className="text-muted text-xs mt-0.5">{t("equipos.proyectoPrivadoDesc")}</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeedbackVisible(!feedbackVisible)}
+                className={"flex items-center gap-3 text-left rounded-xl border p-3.5 transition-all " +
+                  (!feedbackVisible
+                    ? "bg-accent/10 border-accent/50"
+                    : "bg-surface border-edge hover:border-accent/40")}
+              >
+                <span className={"w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors " +
+                  (!feedbackVisible ? "bg-accent border-accent" : "border-edge2")}>
+                  {!feedbackVisible && (
+                    <svg className="w-3 h-3 text-onaccent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
+                <div>
+                  <p className={"text-sm font-medium " + (!feedbackVisible ? "text-accent" : "text-primary")}>
+                    {t("equipos.ocultarFeedback")}
+                  </p>
+                  <p className="text-muted text-xs mt-0.5">{t("equipos.ocultarFeedbackDesc")}</p>
+                </div>
+              </button>
+            </div>
+          )}
 
           {/* Crear subcarpeta en */}
           <div className="mb-4">
@@ -706,20 +851,29 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
         </div>
       )}
 
-      <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : "space-y-3"}>
-        {noUrgentes.map((proyecto) => {
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={noUrgentes.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+          <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : "space-y-3"}>
+            {noUrgentes.map((proyecto) => {
           const progreso = proyecto.tareas > 0 ? Math.round((proyecto.tareas_completadas / proyecto.tareas) * 100) : 0;
           const config = estadoConfig[proyecto.estado];
           const totalPresupuesto = proyecto.servicios.reduce((acc, s) => acc + s.precio, 0);
 
           if (vista === "lista") {
             return (
-              <div key={proyecto.id} onClick={() => setProyectoSeleccionado(proyecto)}
+              <ProyectoSortable key={proyecto.id} id={proyecto.id}>
+              <div onClick={() => setProyectoSeleccionado(proyecto)}
                 className="bg-canvas border border-edge rounded-xl px-5 py-4 flex items-center gap-4 hover:border-accent/50 transition-colors cursor-pointer">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <p className="text-primary text-sm font-medium">{proyecto.nombre}</p>
                     <span className={"text-xs px-2 py-0.5 rounded-full " + config.color}>{config.label}</span>
+                    {modoEquipo && proyecto.es_privado && (
+                      <span className="text-violet text-xs bg-violet/10 px-2 py-0.5 rounded-md">🔒 {t("equipos.privado")}</span>
+                    )}
+                    {proyecto.cobro_por_tareas && (
+                      <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">{t("proyectos.cobroPorTareas")}</span>
+                    )}
                     {proyecto.folder_url && <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">Drive ✓</span>}
                   </div>
                   <p className="text-muted text-xs">{proyecto.cliente_nombre}</p>
@@ -745,23 +899,29 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                   </button>
                   {menuAbiertoId === proyecto.id && (
                     <div className="absolute right-0 top-8 z-30 bg-surface border border-edge rounded-xl shadow-xl py-1 min-w-[140px]">
-                      <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
-                        className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
-                        {t("proyectos.editar")}
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
-                        className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
-                        {t("proyectos.eliminar")}
-                      </button>
+                      {!esViewer && (
+                        <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
+                          className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
+                          {t("proyectos.editar")}
+                        </button>
+                      )}
+                      {puedeEliminar(proyecto) && (
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
+                          className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
+                          {t("proyectos.eliminar")}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
+              </ProyectoSortable>
             );
           }
 
           return (
-            <div key={proyecto.id} onClick={() => setProyectoSeleccionado(proyecto)}
+            <ProyectoSortable key={proyecto.id} id={proyecto.id}>
+            <div onClick={() => setProyectoSeleccionado(proyecto)}
               className="bg-canvas border border-edge rounded-xl p-5 hover:border-accent/50 transition-colors cursor-pointer">
               <div className="flex items-start justify-between mb-3">
                 <div>
@@ -769,6 +929,12 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                   <p className="text-muted text-xs mt-1">{proyecto.cliente_nombre}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {modoEquipo && proyecto.es_privado && (
+                    <span className="text-violet text-xs bg-violet/10 px-2 py-0.5 rounded-md">🔒 {t("equipos.privado")}</span>
+                  )}
+                  {proyecto.cobro_por_tareas && (
+                    <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">{t("proyectos.cobroPorTareas")}</span>
+                  )}
                   {proyecto.folder_url && <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">Drive ✓</span>}
                   <span className={"text-xs px-2 py-1 rounded-full font-medium " + config.color}>{config.label}</span>
                   <div className="relative" data-menu-proyecto>
@@ -780,14 +946,18 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                     </button>
                     {menuAbiertoId === proyecto.id && (
                       <div className="absolute right-0 top-8 z-30 bg-surface border border-edge rounded-xl shadow-xl py-1 min-w-[140px]">
-                        <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
-                          className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
-                          {t("proyectos.editar")}
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
-                          className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
-                          {t("proyectos.eliminar")}
-                        </button>
+                        {!esViewer && (
+                          <button onClick={(e) => { e.stopPropagation(); abrirEdicion(proyecto); }}
+                            className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-canvas transition-colors">
+                            {t("proyectos.editar")}
+                          </button>
+                        )}
+                        {puedeEliminar(proyecto) && (
+                          <button onClick={(e) => { e.stopPropagation(); setConfirmandoEliminarId(proyecto.id); setMenuAbiertoId(null); }}
+                            className="w-full text-left px-3 py-2 text-sm text-coral hover:bg-coral/10 transition-colors">
+                            {t("proyectos.eliminar")}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -807,9 +977,12 @@ function Proyectos({ onGenerarFactura }: ProyectosProps) {
                 {proyecto.deadline && <p>{t("proyectos.entrega", { fecha: proyecto.deadline })}</p>}
               </div>
             </div>
+            </ProyectoSortable>
           );
         })}
-      </div>
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {proyectosFiltrados.length === 0 && (
         <div className="text-center py-12">

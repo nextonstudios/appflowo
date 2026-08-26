@@ -38,8 +38,10 @@ function getDiasRestantes(deadline: string) {
   return Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function Clientes() {
+function Clientes({ equipoId, miRolEquipo }: { equipoId?: string | null; miRolEquipo?: string | null }) {
   const { t } = useTranslation();
+  const modoEquipo = !!equipoId;
+  const esViewer = miRolEquipo === "viewer";
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -93,10 +95,12 @@ const [editandoId, setEditandoId] = useState<string | null>(null);
   async function cargarProyectos() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data } = await supabase
+    const baseQuery = supabase
       .from("proyectos")
-      .select("id, cliente_id, estado")
-      .eq("user_id", user.id);
+      .select("id, cliente_id, estado");
+    const { data } = modoEquipo
+      ? await baseQuery.eq("equipo_id", equipoId)
+      : await baseQuery.eq("user_id", user.id);
     const conteo: Record<string, number> = {};
     (data || []).forEach((p: any) => {
       if (p.estado !== "completado") conteo[p.cliente_id] = (conteo[p.cliente_id] || 0) + 1;
@@ -132,10 +136,10 @@ const [editandoId, setEditandoId] = useState<string | null>(null);
 async function cargarTokensPortal() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) { setTokenPorCliente({}); setTokenDataPorCliente({}); return; }
-  const { data: clientesIds } = await supabase
-    .from("clientes")
-    .select("id")
-    .eq("user_id", user.id);
+  const baseQuery = supabase.from("clientes").select("id");
+  const { data: clientesIds } = modoEquipo
+    ? await baseQuery.eq("equipo_id", equipoId)
+    : await baseQuery.eq("user_id", user.id);
   const ids = (clientesIds || []).map((c: any) => c.id);
   if (ids.length === 0) { setTokenPorCliente({}); setTokenDataPorCliente({}); return; }
   const { data } = await supabase
@@ -193,11 +197,13 @@ function copiarLink() {
     setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setCargando(false); return; }
-    const { data } = await supabase
+    const baseQuery = supabase
       .from("clientes")
       .select("*")
-      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
+    const { data } = modoEquipo
+      ? await baseQuery.eq("equipo_id", equipoId)
+      : await baseQuery.eq("user_id", user.id);
     const clientesConNotas = (data || []).map((c: any) => ({
       ...c,
       notas: Array.isArray(c.notas) ? c.notas : [],
@@ -353,6 +359,7 @@ async function guardarCodigoAcceso(clienteId: string) {
         folder_id,
         folder_url,
       };
+      if (modoEquipo) clienteData.equipo_id = equipoId;
       if (dropbox_folder_path) {
         clienteData.dropbox_folder_path = dropbox_folder_path;
         clienteData.dropbox_folder_url = dropbox_folder_url;
@@ -591,16 +598,18 @@ async function guardarCodigoAcceso(clienteId: string) {
           <p className="text-sm font-medium text-muted mt-1">{t("clientes.registrados", { count: clientes.length })}</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => (mostrarForm ? cerrarForm() : setMostrarForm(true))}
-            disabled={guardando}
-            className={"px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 " +
-              (mostrarForm
-                ? "bg-surface border border-edge text-primary hover:border-coral/40"
-                : "bg-accent text-onaccent hover:opacity-90")}
-          >
-            {guardando ? (editandoId ? t("clientes.guardando") : t("clientes.creando")) : mostrarForm ? t("clientes.cancelar") : t("clientes.nuevoCliente")}
-          </button>
+          {!esViewer && (
+            <button
+              onClick={() => (mostrarForm ? cerrarForm() : setMostrarForm(true))}
+              disabled={guardando}
+              className={"px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 " +
+                (mostrarForm
+                  ? "bg-surface border border-edge text-primary hover:border-coral/40"
+                  : "bg-accent text-onaccent hover:opacity-90")}
+            >
+              {guardando ? (editandoId ? t("clientes.guardando") : t("clientes.creando")) : mostrarForm ? t("clientes.cancelar") : t("clientes.nuevoCliente")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -835,18 +844,22 @@ async function guardarCodigoAcceso(clienteId: string) {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); editarCliente(cliente); }}
-                    className="text-muted2 text-[11px] font-medium px-2 py-1 rounded-md hover:text-primary hover:bg-surface border border-transparent hover:border-edge"
-                  >
-                    {t("clientes.editar")}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); eliminarCliente(cliente); }}
-                    className="text-coral text-[11px] font-medium px-2 py-1 rounded-md hover:bg-danger/10"
-                  >
-                    {t("clientes.eliminar")}
-                  </button>
+                  {!esViewer && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); editarCliente(cliente); }}
+                      className="text-muted2 text-[11px] font-medium px-2 py-1 rounded-md hover:text-primary hover:bg-surface border border-transparent hover:border-edge"
+                    >
+                      {t("clientes.editar")}
+                    </button>
+                  )}
+                  {miRolEquipo === "admin" && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); eliminarCliente(cliente); }}
+                      className="text-coral text-[11px] font-medium px-2 py-1 rounded-md hover:bg-danger/10"
+                    >
+                      {t("clientes.eliminar")}
+                    </button>
+                  )}
                   {proyectosPorCliente[cliente.id] > 0 && (
                     <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded-md">
                       {t("clientes.proyectosConteo", { count: proyectosPorCliente[cliente.id] })}
@@ -935,21 +948,23 @@ async function guardarCodigoAcceso(clienteId: string) {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-muted text-xs uppercase tracking-wide">{t("clientes.notasPrivadas")}</p>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (notaClienteId === cliente.id) {
-                            setNotaClienteId(null);
-                            setNuevaNota("");
-                          } else {
-                            setNuevaNota("");
-                            setNotaClienteId(cliente.id);
-                          }
-                        }}
-                        className="text-accent text-xs hover:underline"
-                      >
-                        {t("clientes.agregarNota")}
-                      </button>
+                      {!esViewer && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (notaClienteId === cliente.id) {
+                              setNotaClienteId(null);
+                              setNuevaNota("");
+                            } else {
+                              setNuevaNota("");
+                              setNotaClienteId(cliente.id);
+                            }
+                          }}
+                          className="text-accent text-xs hover:underline"
+                        >
+                          {t("clientes.agregarNota")}
+                        </button>
+                      )}
                     </div>
 
                     {notaClienteId === cliente.id && (
@@ -989,12 +1004,14 @@ async function guardarCodigoAcceso(clienteId: string) {
                             <p className="text-primary text-xs">{nota.texto}</p>
                             <p className="text-muted text-xs mt-1">{nota.fecha}</p>
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); eliminarNota(cliente.id, nota.id); }}
-                            className="text-muted text-xs hover:text-coral flex-shrink-0"
-                          >
-                            {t("clientes.eliminar")}
-                          </button>
+                          {!esViewer && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); eliminarNota(cliente.id, nota.id); }}
+                              className="text-muted text-xs hover:text-coral flex-shrink-0"
+                            >
+                              {t("clientes.eliminar")}
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

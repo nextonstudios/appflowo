@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { supabase } from "../lib/supabase";
@@ -9,6 +9,7 @@ import TareaItemSortable from "./TareaItemSortable";
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { prioridadConfig, type Nota, type Subtarea, type Tarea } from "./TareaItem";
+import { miembrosDeEquipo, type MiembroEquipo } from "../lib/equipo";
 
 type TareaTab = Tarea & {
   proyecto_id: string;
@@ -31,9 +32,11 @@ function getPrioridadLabels(t: TFunction) {
   };
 }
 
-function Tareas() {
+function Tareas({ equipoId, miRolEquipo }: { equipoId?: string | null; miRolEquipo?: string | null }) {
   const { t } = useTranslation();
   const prioridadLabels = getPrioridadLabels(t);
+  const modoEquipo = !!equipoId;
+  const esViewer = miRolEquipo === "viewer";
   const [tareas, setTareas] = useState<TareaTab[]>([]);
   const [proyectos, setProyectos] = useState<ProyectoOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -76,20 +79,51 @@ function Tareas() {
     nombre: string;
     resolve: (opcion: "usar" | "nueva") => void;
   } | null>(null);
+  const [miembros, setMiembros] = useState<MiembroEquipo[]>([]);
+  const [asignaciones, setAsignaciones] = useState<{ tarea_id: string; user_id: string }[]>([]);
 
   useEffect(() => {
     cargarDatos();
     tieneDriveConectado().then(setHayDrive);
+    if (equipoId) miembrosDeEquipo(equipoId).then(setMiembros);
   }, []);
 
   async function cargarDatos() {
     setCargando(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const [{ data: tareasData }, { data: proyectosData }] = await Promise.all([
-      supabase.from("tareas").select("*").eq("user_id", user?.id).order("orden", { ascending: true }).order("created_at", { ascending: false }),
-      supabase.from("proyectos").select("id, nombre, folder_id, folder_url, cobro_por_tareas").eq("user_id", user?.id),
-    ]);
+
+    let proyectosQuery = supabase.from("proyectos").select("id, nombre, folder_id, folder_url, cobro_por_tareas");
+    if (modoEquipo) {
+      proyectosQuery = proyectosQuery.eq("equipo_id", equipoId);
+    } else {
+      proyectosQuery = proyectosQuery.eq("user_id", user?.id);
+    }
+    const { data: proyectosData } = await proyectosQuery;
     setProyectos(proyectosData || []);
+
+    let tareasData: any[] | null = null;
+    if (modoEquipo) {
+      const ids = (proyectosData || []).map((p: ProyectoOpcion) => p.id);
+      if (ids.length === 0) {
+        tareasData = [];
+      } else {
+        const res = await supabase.from("tareas").select("*").in("proyecto_id", ids).order("orden", { ascending: true }).order("created_at", { ascending: false });
+        tareasData = res.data;
+        if (res.data && res.data.length > 0) {
+          const { data: asigData } = await supabase
+            .from("tarea_asignaciones")
+            .select("tarea_id, user_id")
+            .in("tarea_id", res.data.map((td: any) => td.id));
+          setAsignaciones(asigData || []);
+        } else {
+          setAsignaciones([]);
+        }
+      }
+    } else {
+      const res = await supabase.from("tareas").select("*").eq("user_id", user?.id).order("orden", { ascending: true }).order("created_at", { ascending: false });
+      tareasData = res.data;
+    }
+
     const proyectosMap = Object.fromEntries((proyectosData || []).map((p: ProyectoOpcion) => [p.id, p.nombre]));
     const tareasMapeadas = (tareasData || []).map((td: any) => ({
       ...td,
@@ -104,10 +138,33 @@ function Tareas() {
       folder_url: td.folder_url || undefined,
       aprobada_cliente: td.aprobada_cliente || false,
       valor: td.valor || 0,
+      pagada: td.pagada || false,
       orden: td.orden ?? 0,
     }));
     setTareas(tareasMapeadas as TareaTab[]);
     setCargando(false);
+  }
+
+  const tareasConAsignados = useMemo(() => {
+    if (!modoEquipo) return tareas;
+    return tareas.map((tarea) => ({
+      ...tarea,
+      asignaciones: asignaciones
+        .filter((a) => a.tarea_id === tarea.id)
+        .map((a) => ({ user_id: a.user_id, nombre: miembros.find((m) => m.user_id === a.user_id)?.nombre || "?" })),
+    })) as TareaTab[];
+  }, [tareas, asignaciones, miembros, modoEquipo]);
+
+  async function toggleAsignado(tareaId: string, userId: string) {
+    if (!modoEquipo || esViewer) return;
+    const existente = asignaciones.find((a) => a.tarea_id === tareaId && a.user_id === userId);
+    if (existente) {
+      setAsignaciones(asignaciones.filter((a) => a !== existente));
+      await supabase.from("tarea_asignaciones").delete().eq("tarea_id", tareaId).eq("user_id", userId);
+    } else {
+      setAsignaciones([...asignaciones, { tarea_id: tareaId, user_id: userId }]);
+      await supabase.from("tarea_asignaciones").insert({ tarea_id: tareaId, user_id: userId });
+    }
   }
 
   const proyectoSeleccionado = proyectos.find((p) => p.id === proyectoId);
@@ -227,6 +284,14 @@ function Tareas() {
     await cambiarEstado(id, tarea.completada ? "pendiente" : "completada");
   }
 
+  async function togglePagada(id: string) {
+    const tarea = tareas.find((t) => t.id === id);
+    if (!tarea) return;
+    const nuevoValor = !tarea.pagada;
+    await supabase.from("tareas").update({ pagada: nuevoValor }).eq("id", id);
+    setTareas(tareas.map((t) => t.id === id ? { ...t, pagada: nuevoValor } : t));
+  }
+
   async function guardarEdicionTarea(id: string) {
     const nota = editNota.trim();
     const notas: Nota[] = nota
@@ -312,7 +377,7 @@ function Tareas() {
     setEditNota(tarea.nota);
   }
 
-  const tareasFiltradas = tareas.filter((ta) => {
+  const tareasFiltradas = tareasConAsignados.filter((ta) => {
     const coincideBusqueda = ta.titulo.toLowerCase().includes(busqueda.toLowerCase());
     const coincidePrioridad = filtroPrioridad === "todas" || ta.prioridad === filtroPrioridad;
     const coincideProyecto = !filtroProyecto || ta.proyecto_id === filtroProyecto;
@@ -365,12 +430,16 @@ function Tareas() {
     setNuevaSubtareaPublica,
     onToggleTarea: toggleTarea,
     onCambiarEstado: cambiarEstado,
+    onTogglePagada: togglePagada,
     onGuardarEdicion: guardarEdicionTarea,
     onAbrirEdicion: abrirEdicion,
     onEliminarTarea: eliminarTarea,
     onAgregarSubtarea: agregarSubtarea,
     onToggleSubtarea: toggleSubtarea,
     onEliminarSubtarea: eliminarSubtarea,
+    modoEquipo,
+    miembros: miembros.map((m) => ({ userId: m.user_id, nombre: m.nombre })),
+    onToggleAsignado: toggleAsignado,
     onReorderSubtareas: async (tareaId: string, subtareas: Subtarea[]) => {
       setTareas((prev) => prev.map((ta) => ta.id === tareaId ? { ...ta, subtareas } : ta));
       await supabase.from("tareas").update({ subtareas }).eq("id", tareaId);
@@ -440,10 +509,12 @@ function Tareas() {
             {totalAprobadas > 0 && <span className="text-accent"> · {t("tareas.aprobadasPorCliente", { count: totalAprobadas })}</span>}
           </p>
         </div>
-        <button onClick={() => setMostrarForm(!mostrarForm)}
-          className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
-          + {t("tareas.nuevaTarea")}
-        </button>
+        {!esViewer && (
+          <button onClick={() => setMostrarForm(!mostrarForm)}
+            className="bg-accent text-onaccent font-medium px-4 py-2 rounded-lg text-sm hover:opacity-90 transition-opacity">
+            + {t("tareas.nuevaTarea")}
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 mb-6">
@@ -653,7 +724,7 @@ function Tareas() {
             </div>
             <SortableContext items={tareasGrupo.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-                {tareasGrupo.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} cobroPorTareas={proyectoCobroPorTareas(tarea.proyecto_id)} {...propsComunes} />)}
+                {tareasGrupo.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} deshabilitado={esViewer} cobroPorTareas={proyectoCobroPorTareas(tarea.proyecto_id)} {...propsComunes} />)}
               </div>
             </SortableContext>
           </div>
@@ -666,7 +737,7 @@ function Tareas() {
             </div>
             <SortableContext items={tareasSinProyecto.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               <div className={vista === "tarjetas" ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-2"}>
-                {tareasSinProyecto.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} cobroPorTareas={false} {...propsComunes} />)}
+                {tareasSinProyecto.map((tarea) => <TareaItemSortable key={tarea.id} tarea={tarea} deshabilitado={esViewer} cobroPorTareas={false} {...propsComunes} />)}
               </div>
             </SortableContext>
           </div>
