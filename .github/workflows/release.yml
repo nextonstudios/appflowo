@@ -90,13 +90,13 @@ jobs:
               let platformKey = null;
               let sigUrl = null;
 
-              if (name.endsWith('-x64-setup.exe')) {
+              if (name.endsWith('_x64-setup.exe') || name.endsWith('-x64-setup.exe')) {
                 platformKey = 'windows-x86_64';
                 sigUrl = url + '.sig';
               } else if (name.endsWith('.app.tar.gz') && !name.includes('x86_64')) {
                 platformKey = 'darwin-aarch64';
                 sigUrl = url + '.sig';
-              } else if (name.endsWith('.AppImage.tar.gz')) {
+              } else if (name.endsWith('.AppImage.tar.gz') || (name.endsWith('.AppImage') && !name.endsWith('.sig'))) {
                 platformKey = 'linux-x86_64';
                 sigUrl = url + '.sig';
               }
@@ -105,7 +105,8 @@ jobs:
                 let signature = '';
                 if (sigUrl) {
                   try {
-                    const sigAsset = assets.find(a => a.browser_download_url === sigUrl);
+                    const sigName = name + '.sig';
+                    const sigAsset = assets.find(a => a.name === sigName);
                     if (sigAsset) {
                       const resp = await github.rest.repos.getReleaseAsset({
                         owner: context.repo.owner,
